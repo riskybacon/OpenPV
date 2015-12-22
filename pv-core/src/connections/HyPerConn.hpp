@@ -35,6 +35,36 @@
 
 namespace PV {
 
+struct PVPatchAccumulate {
+   PVPatchAccumulate() {}
+
+   int operator()(int kPreExt, int nk, float* RESTRICT v, float a, pvwdata_t* RESTRICT w, void * auxPtr, int sf) {
+      int k;
+      int err = 0;
+      float accumval = 0;
+      for (k = 0; k < nk; k+=sf) {
+         accumval = a*w[k];
+         v[k] += accumval;
+      }
+      return err;
+   }
+};
+
+struct PVPatchAccumulateFromPost {
+   PVPatchAccumulateFromPost() {}
+
+   int operator()(int kPreExt, int nk, float * RESTRICT v, float * RESTRICT a, pvwdata_t * RESTRICT w, float dt_factor, void * auxPtr, int sf) {
+      int status = 0;
+      int k;
+      //float dv = 0.0f;
+      for (k = 0; k < nk; k+=sf) {
+         *v += dt_factor*a[k]*w[k];
+         //dv = dv + a[k]*w[k];
+      }
+      //*v = *v + dt_factor*dv;
+      return status;
+   }
+};
 
 //class HyPerCol;
 //class HyPerLayer;
@@ -53,6 +83,8 @@ class privateTransposeConn;
  */
 
 class HyPerConn : public BaseConnection {
+   PVPatchAccumulate accumulate;
+   PVPatchAccumulateFromPost accumulateFromPost;
 
 public:
    friend class CloneConn;
@@ -97,9 +129,45 @@ public:
     * Uses presynaptic layer's activity to modify the postsynaptic GSyn or thread_gSyn
     */
    virtual int deliver();
-   virtual void deliverOnePreNeuronActivity(int patchIndex, int arbor, pvadata_t a, pvgsyndata_t * postBufferStart, void * auxPtr);
-   virtual void deliverOnePostNeuronActivity(int arborID, int kTargetExt, int inSy, float* activityStartBuf, pvdata_t* gSynPatchPos, float dt_factor, uint4 * rngPtr);
-    
+
+   void deliverOnePostNeuronActivity(int arborID, int kTargetExt, int inSy, float* activityStartBuf, pvdata_t* gSynPatchPos, float dt_factor, uint4 * rngPtr){
+
+      //get source layer's patch y stride
+      int syp = postConn->yPatchStride();
+      int yPatchSize = postConn->yPatchSize();
+      //Iterate through y patch
+      int numPerStride = postConn->xPatchSize() * postConn->fPatchSize();
+      int kernelIndex = postConn->patchToDataLUT(kTargetExt);
+
+      pvwdata_t* weightStartBuf = postConn->get_wDataHead(arborID, kernelIndex);
+      int sf = 1;
+      int offset = 0;
+      for (int ky = 0; ky < yPatchSize; ky++){
+         float * activityY = &(activityStartBuf[ky*inSy+offset]);
+         pvwdata_t * weightY = weightStartBuf + ky*syp;
+         //TODO add sf here
+         PVPatchAccumulateFromPost accumulateFromPost;
+         accumulateFromPost(0, numPerStride, gSynPatchPos, activityY, weightY, dt_factor, rngPtr, sf);
+      }
+   }
+
+   void deliverOnePreNeuronActivity(int kPreExt, int arbor, pvadata_t a, pvgsyndata_t * postBufferStart, void * auxPtr) {
+      PVPatch * weights = getWeights(kPreExt, arbor);
+      const int nk = weights->nx * fPatchSize();
+      const int ny = weights->ny;
+      const int sy  = getPostNonextStrides()->sy;       // stride in layer
+      const int syw = yPatchStride();                   // stride in patch
+      pvwdata_t * weightDataStart = NULL;
+      pvgsyndata_t * postPatchStart = postBufferStart + getGSynPatchStart(kPreExt, arbor);
+      int offset = 0;
+      int sf = 1;
+      weightDataStart = get_wData(arbor,kPreExt); // make this a pvwdata_t const *?
+      for (int y = 0; y < ny; y++) {
+         PVPatchAccumulate accumulate;
+         accumulate(0, nk, postPatchStart + y*sy + offset, a, weightDataStart + y*syw + offset, auxPtr, sf);
+      }
+   }
+
    GSynAccumulateType getPvpatchAccumulateType() { return pvpatchAccumulateType; }
    int (*accumulateFunctionPointer)(int kPreRes, int nk, float* v, float a, pvwdata_t* w, void* auxPtr, int sf);
    int (*accumulateFunctionFromPostPointer)(int kPreRes, int nk, float* v, float* a, pvwdata_t* w, float dt_factor, void* auxPtr, int sf);
@@ -994,7 +1062,6 @@ protected:
    bool allocPostDeviceWeights;
    //bool updatedDeviceWeights;
    
-
 #ifdef PV_USE_OPENCL
    CLBuffer * d_WData;
    CLBuffer * d_Patches;
