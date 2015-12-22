@@ -4,6 +4,10 @@
 extern "C" {
 #endif
 
+#ifdef PV_USE_BLAS
+#include <accelerate/accelerate.h>
+#endif
+
 #ifdef COMPRESS_PHI
 void pvpatch_accumulate(int kPreExt, int nk, float* restrict v, float a, pvwdata_t* restrict w,
                         float* restrict m)
@@ -39,10 +43,14 @@ int pvpatch_accumulate_from_post(int kPreExt, int nk, float * RESTRICT v, float 
    int status = 0;
    int k;
    //float dv = 0.0f;
+#ifdef PV_USE_BLAS
+   *v += dt_factor * cblas_sdot(nk/sf, a, sf, w, sf);
+#else
    for (k = 0; k < nk; k+=sf) {
       *v += dt_factor*a[k]*w[k];
       //dv = dv + a[k]*w[k];
    }
+#endif
    //*v = *v + dt_factor*dv;
    return status;
 }

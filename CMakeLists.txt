@@ -36,6 +36,7 @@ set(CUDA_RELEASE FALSE CACHE BOOL "Defines if Cuda compiles with optimization")
 set(PV_OPENMP_COMPILER_FLAG ${PV_OPENMP_COMPILER_FLAG_DEFAULT} CACHE STRING "Compiler flag for compiling with OpenMP")
 set(PV_HEADERS_IN_PROJECT FALSE CACHE BOOL "Set to ON to include .h and .hpp files in the project")
 set(PV_GPROF FALSE CACHE BOOL "Set to ON to build profiled binaries that generate a gmon.out for use with gprof")
+set(PV_USE_BLAS FALSE CACHE BOOL "Use the BLAS library")
 
 #set(PV_USE_CUDNN FALSE CACHE BOOL "Defines if PetaVision uses Cuda's CUDNN library")
 set(CUDNN_PATH ${CUDNN_PATH_DEFAULT} CACHE PATH "Location of cuDNN libraries")
@@ -70,6 +71,12 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug) #Can be: None, Debug, Release, RelWithDebInfo, MinSizeRel
 endif (NOT CMAKE_BUILD_TYPE)
 
+if(PV_USE_BLAS)
+   add_definitions(-DPV_USE_BLAS=1)
+   if(APPLE)
+      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -framework accelerate")
+   endif(APPLE)
+endif(PV_USE_BLAS)
 
 if(PV_USE_OPENCL AND NOT DEFINED PV_USE_OPENCL_FLAGS_ADDED)
    IF(APPLE)
