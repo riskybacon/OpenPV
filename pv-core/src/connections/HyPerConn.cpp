@@ -3492,101 +3492,178 @@ int HyPerConn::deliver() {
    return PV_SUCCESS;
 }
 
+#if 0
 void HyPerConn::buildPreList(PVLayerCube const * activity, const int arbor, const int batch) {
-  assert(arbor >= 0);
-  assert(batch >= 0);
-  unsigned long int nonZero = 0;
-  unsigned long int total = 0;
-  // Get the pre and post synaptic layers
-  const PVLayerLoc * preLoc = preSynapticLayer()->getLayerLoc();
-  const PVLayerLoc * postLoc = postSynapticLayer()->getLayerLoc();
-  
-  unsigned int * activeIndicesBatch = NULL;
-  if(activity->isSparse) {
-    activeIndicesBatch = activity->activeIndices + batch * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
-  }
-  
-  // Set the number of loop iterations based on the number of neurons
-  int numNeurons = activity->numItems;
-  if(activity->isSparse) {
-    numNeurons = activity->numActive[batch];
-  }
-  
-  pvdata_t * activityBatch = activity->data + batch * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
-  pvdata_t * gSynPatchHead = post->getChannel(getChannel()) + batch * postLoc->nx * postLoc->ny * postLoc->nf;
-  
-  preNeuronList().clear();
+   assert(arbor >= 0);
+   assert(batch == 0);
 
-  for (int idx = 0; idx < numNeurons; idx++) {
-    int kPreExt = idx;
-    if(activity->isSparse) {
-      kPreExt = activeIndicesBatch[idx];
-    }
-    
-    PVPatch * weights = getWeights(kPreExt, arbor);
-    const int nk = weights->nx * fPatchSize();
-    const int ny = weights->ny;
-    const int sy  = getPostNonextStrides()->sy;       // stride in layer
-    const int syw = yPatchStride();                   // stride in patch
-    pvwdata_t * weightDataStart = NULL; 
-    pvgsyndata_t * postPatchStart = gSynPatchHead + getGSynPatchStart(kPreExt, arbor);
-    int offset = 0;
-    int sf = 1;
-    weightDataStart = get_wData(arbor,kPreExt); // make this a pvwdata_t const *?
-    pvadata_t *a = activityBatch + kPreExt;
+   // Threshold that weights need to exceed to be part of the update
+   pvwdata_t threshold = 0.0f;
 
-    preNeuronList().push_back(PreNeuron(a));
+   // Size the preNeuronList appropriately, in contigous memory
+   const int numPreNeurons = activity->numItems;
+   _preNeuronList.resize(numPreNeurons);
 
-    for (int y = 0; y < ny; y++) {
-      pvwdata_t *weightPatch = weightDataStart + y*syw + offset;
-      pvgsyndata_t *postPatch = postPatchStart + y * sy + offset;
-      
-      for (int idx = 0; idx < nk; idx += sf) {
-	preNeuronList().back().addTarget(weightPatch + idx, postPatch + idx, 0);
+   // Get the pre and post synaptic layers
+   const PVLayerLoc * postLoc = postSynapticLayer()->getLayerLoc();
+
+   pvdata_t *gSynPatchHead = post->getChannel(getChannel()) + batch * postLoc->nx * postLoc->ny * postLoc->nf;
+
+   for (unsigned int neuron = 0; neuron < numPreNeurons; neuron++) {
+      PVPatch *weights = getWeights(neuron, arbor);
+      const int nk = weights->nx * fPatchSize();
+      const int ny = weights->ny;
+      const int sy  = getPostNonextStrides()->sy;       // stride in layer
+      const int syw = yPatchStride();                   // stride in patch
+      pvgsyndata_t * postPatchStart = gSynPatchHead + getGSynPatchStart(neuron, arbor);
+      int offset = 0;
+      int sf = 1;
+      const pvwdata_t *weightDataStart = get_wData(arbor, neuron); // make this a pvwdata_t const *?
+
+      for (int y = 0; y < ny; y++) {
+         const pvwdata_t *weightPatch = weightDataStart + y*syw + offset;
+         pvgsyndata_t *postPatch = postPatchStart + y * sy + offset;
+
+         for (int k = 0; k < nk; k += sf) {
+            pvwdata_t weight = weightPatch[k];
+            if (weight > threshold) {
+               _preNeuronList[neuron].addTarget(weight, postPatch + k);
+            }
+         }
       }
-      totalWeights()++;
-    }
-  }
+   }
+}
+#endif
 
-  /*
-  int numWeights = 0;
-  for(PreNeuron& neuron : neuronList()) {
-    for(PreNeuron::WeightTarget& weightTarget : neuron.weightTargetList()) {
-      numWeights++;
-    }
-  }
+   
+int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arbor) {
+   assert(arbor >= 0);
+   //   buildPreList(activity, arborID, 0);
 
-  std::cout << "numWeights: " << numWeights << std::endl;
-  */
+   //Check if we need to update based on connection's channel
+   if(getChannel() == CHANNEL_NOUPDATE){
+      return PV_SUCCESS;
+   }
+
+   assert(post->getChannel(getChannel()));
+
+   const float dt_factor = getPvpatchAccumulateType() == ACCUMULATE_STOCHASTIC ? getParent()->getDeltaTime() : getConvertToRateDeltaTimeFactor();
+
+   const PVLayerLoc * preLoc = preSynapticLayer()->getLayerLoc();
+   const PVLayerLoc * postLoc = postSynapticLayer()->getLayerLoc();
+
+   const int preLocActivity = (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
+   const int postLocBatch = postLoc->nx * postLoc->ny * postLoc->nf;
+
+   //   const int numExtended = activity->numItems;
+
+   int nbatch = parent->getNBatch();
+
+   for(int b = 0; b < nbatch; b++) {
+      pvdata_t * activityBatch = activity->data + b * preLocActivity;
+      pvdata_t * postBufferStart = post->getChannel(getChannel()) + b * postLocBatch;
+      unsigned int * activeIndicesBatch = NULL;
+      if(activity->isSparse){
+         activeIndicesBatch = activity->activeIndices + b * preLocActivity;
+      }
+
+      int numPreNeurons = activity->isSparse ? activity->numActive[b] : activity->numItems;
+
+      for (int idx = 0; idx < numPreNeurons; idx++) {
+         const int kPreExt = activity->isSparse ? activeIndicesBatch[idx] : idx;
+         const float a = activityBatch[kPreExt] * dt_factor;
+         void * auxPtr = getRandState(kPreExt);
+         PVPatch * weights = getWeights(kPreExt, arbor);
+         const int nk = weights->nx * fPatchSize();
+         const int ny = weights->ny;
+         const int sy  = getPostNonextStrides()->sy;       // stride in layer
+         const int syw = yPatchStride();                   // stride in patch
+         pvwdata_t *weightDataStart = get_wData(arbor,kPreExt);
+         pvgsyndata_t * postPatchStart = postBufferStart + getGSynPatchStart(kPreExt, arbor);
+         int offset = 0;
+         int sf = 1;
+         for (int y = 0; y < ny; y++) {
+            pvwdata_t *weightPatch = weightDataStart + y*syw + offset;
+            pvgsyndata_t *postPatch = postPatchStart + y * sy + offset;
+            (accumulateFunctionPointer)(0, nk, postPatch, a, weightPatch, auxPtr, sf);
+         }
+      }
+   }
+
+   return PV_SUCCESS;
 }
 
+
+#if 0
 int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arborID) {
-  // Check if we need to update based on connection's channel
-  if(getChannel() == CHANNEL_NOUPDATE) {
-    return PV_SUCCESS;
-  }
+   // Check if we need to update based on connection's channel
+   if(getChannel() == CHANNEL_NOUPDATE) {
+      return PV_SUCCESS;
+   }
 
-  // Check to see if a rebuild is needed
-  int rebuildInterval = 100;
-  if (numDeliverCalls() % rebuildInterval == 0) {
-    buildPreList(activity, arborID, 0);
-  }
-  
-  float dt_factor = getConvertToRateDeltaTimeFactor();
-  if (getPvpatchAccumulateType()==ACCUMULATE_STOCHASTIC) {
-    dt_factor = getParent()->getDeltaTime();
-  }
-  
+   unsigned int batch = 0;
+   const int numExtended = activity->numItems;
+
+   if (rebuildPreNeuronMapRequired()) {
+      buildPreList(activity, arborID, batch);
+   }
+
+   float dt_factor = getConvertToRateDeltaTimeFactor();
+   if (getPvpatchAccumulateType()==ACCUMULATE_STOCHASTIC) {
+      dt_factor = getParent()->getDeltaTime();
+   }
+
+   const PVLayerLoc * preLoc = preSynapticLayer()->getLayerLoc();
+
+   unsigned int numNeurons = numExtended;
+   unsigned int * activeIndicesBatch = NULL;
+
+   // Neuron activity for this batch
+   pvdata_t *activityBatch = activity->data + batch * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
+
+   if (activity->isSparse) {
+      activeIndicesBatch = activity->activeIndices + batch * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
+      numNeurons = activity->numActive[batch];
+   }
+#if 0
 #ifdef PV_USE_OPENMP_THREADS
-#pragma omp parallel for schedule(static)
-#endif 
-  for (int idx = 0; idx < preNeuronList().size(); idx++) {
-    preNeuronList()[idx].deliver(dt_factor);
-  }
+   //Clear all thread gsyn buffer
+   int postNumNeurons = post->getNumNeurons();
+#pragma omp parallel for
+   for(int i = 0; i < parent->getNumThreads() * postNumNeurons; i++){
+      int ti = i / postNumNeurons;
+      int ni = i % postNumNeurons;
+      thread_gSyn[ti][ni] = 0;
+   }
 
-  incrementDeliverCalls();
-  return PV_SUCCESS;
+   // Deliver perspective
+#pragma omp parallel for schedule(static)
+#endif
+#endif
+   for (unsigned int idx = 0; idx < numNeurons; idx++) {
+      unsigned int neuron = activity->isSparse ? activeIndicesBatch[idx] : idx;
+      _preNeuronList[neuron].deliver(activityBatch[neuron] * dt_factor);
+   }
+#if 0
+#ifdef PV_USE_OPENMP_THREADS
+   // Accumulate per-thread perspective
+   // Should this be done in HyPerLayer where it can be done once, as opposed to once per connection?
+   const PVLayerLoc * postLoc = postSynapticLayer()->getLayerLoc();
+   pvdata_t * gSynPatchHead = post->getChannel(getChannel()) + batch * postLoc->nx * postLoc->ny * postLoc->nf;
+
+   // Looping over neurons first to be thread safe
+#pragma omp parallel for
+   for(int ni = 0; ni < postNumNeurons; ni++){
+      for(int ti = 0; ti < parent->getNumThreads(); ti++){
+         gSynPatchHead[ni] += thread_gSyn[ti][ni];
+      }
+   }
+#endif
+#endif
+   _numDeliverCalls++;
+   return PV_SUCCESS;
 }
+#endif
 
 #if 0
 int HyPerConn::deliverPresynapticPerspectiveOld(PVLayerCube const * activity, int arborID) {

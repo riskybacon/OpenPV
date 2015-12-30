@@ -41,53 +41,38 @@ namespace PV {
  */
 class PreNeuron {
 public:
-  typedef std::pair<pvwdata_t *, pvgsyndata_t *> WeightTarget;
+   typedef std::pair<pvwdata_t, pvgsyndata_t *> WeightTarget;
 
-  /**
-   * Construct an empty pre synaptic neuron map. This adds the neuron,
-   * and creates an empty list of targets
-   */
-  PreNeuron(pvadata_t *activity) : _activity(activity) {}
-
-  /**
-   * Add a target to this neuron's list, but only if the weight exceeds
-   * the specified threshold
-   *
-   * @param weight The address of the weight
-   * @param target The address of the target
-   * @param threshold The weight threshold that must be exceeded
-   */
-  void addTarget(pvwdata_t *weight, pvgsyndata_t *target, pvwdata_t threshold = 0) {
-    if (*weight > threshold) {
-      weightTargetList().push_back(WeightTarget(weight, target));
-    }
-  }
-
-  /**
-   * Deliver this neuron's perspective to the post layer
-   */
-  void deliver(float dt) {
-    for(WeightTarget& weightTarget : weightTargetList()) {
-      // target += activity * dt * weight
-      *(weightTarget.second) += activity() * dt * *(weightTarget.first);
-    }
-  }
-
-  std::vector<WeightTarget>& weightTargetList() {
-    return _weightTargetList;
-  }
-
-  void clear() {
-    weightTargetList().clear();
-  }
-
-  const pvadata_t& activity() const {
-    return *_activity;
-  }
+   /**
+    * Construct an empty pre synaptic neuron map.
+    */
+   PreNeuron() {}
+   
+   /**
+    * Add a target to this neuron's list, but only if the weight exceeds
+    * the specified threshold
+    *
+    * @param weight The address of the weight
+    * @param target The address of the target
+    * @param threshold The weight threshold that must be exceeded
+    */
+   void addTarget(const pvwdata_t& weight, pvgsyndata_t *target) {
+      _weightTargetList.push_back(WeightTarget(weight, target));
+   }
+   
+   /**
+    * Deliver this neuron's perspective to the post layer
+    */
+   void deliver(pvadata_t activity) {
+      for(WeightTarget& weightTarget : _weightTargetList) {
+         // target += activity * dt * weight
+         *(weightTarget.second) += activity * weightTarget.first;
+      }
+   }
 
 private:
-  pvadata_t *_activity;
-  std::vector<WeightTarget> _weightTargetList;
+   // List of weight,target pairs for this neuron. Only weights that are active are stored on this list
+    std::vector<WeightTarget> _weightTargetList;
 };
 
 struct PVPatchAccumulate {
@@ -428,33 +413,12 @@ protected:
    std::vector<PreNeuron> _preNeuronList; // Map from neurons -> targets where weights are above the threshold
    int _numDeliverCalls; // Number of times deliver has been called
    unsigned long _totalWeights; // Total number of weights
-
-   const int& numDeliverCalls() const {
-      return _numDeliverCalls;
-   }
-
-   int& numDeliverCalls() {
-      return _numDeliverCalls;
-   }
-
-   const unsigned long& totalWeights() const {
-      return _totalWeights;
-   }
-
-   unsigned long& totalWeights() {
-      return _totalWeights;
-   }
-  
-   void incrementDeliverCalls() {
-      numDeliverCalls()++;
-   }
-
-   std::vector<PreNeuron>& preNeuronList() {
-      return _preNeuronList;
-   }
-
-   const std::vector<PreNeuron>& preNeuronList() const {
-      return _preNeuronList;
+   /**
+    * @returns true if the pre neuron map needs to be rebuilt
+    */
+   const bool rebuildPreNeuronMapRequired() const {
+      static const int rebuildInterval = 100;
+      return _numDeliverCalls % rebuildInterval == 0;
    }
 
    std::vector <PlasticCloneConn*> clones; //A vector of plastic clones that are cloning from this connection
