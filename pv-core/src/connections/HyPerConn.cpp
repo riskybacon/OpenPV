@@ -3599,23 +3599,23 @@ void HyPerConn::allocateSparseWeights() {
                }
             }
          }
-
+         
          _patchSparseWeightCount.push_back(sparseWeightCount);
       }
    }
 
-#if 0
+#if 1
    float sparsePercentage = (1 - float(_sparseWeight.size()) / float(totalWeights)) * 100;
    float sparseSize = _sparseWeight.size() * sizeof(WeightListType::value_type) / 1024 / 1024;
 
    log_debug("%s:", getName());
    log_debug(" Num weight data patches: %d", numPatches);
    log_debug(" Num weight patches:      %d", getNumWeightPatches());
-   log_debug(" Num neurons:             %d", activity->numItems);
    log_debug(" Weight sparse ratio:     %d/%d (%.2f\%    %d MB)", _sparseWeight.size(), totalWeights, sparsePercentage, sparseSize);
 #endif
 }
 
+<<<<<<< e707d3f0e564debd3a7ec967b9a1d6a221afa623
 #if 1
 // sparse implementation
 int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arbor) {
@@ -3624,6 +3624,10 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
       return PV_SUCCESS;
    }
    assert(post->getChannel(getChannel()));
+
+   if (!_sparseWeightsAllocated) {
+      allocateSparseWeights();
+   }
 
    float dt_factor = getConvertToRateDeltaTimeFactor();
    if (getPvpatchAccumulateType() == ACCUMULATE_STOCHASTIC) {
@@ -3647,7 +3651,7 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
       }
 
 #ifdef PV_USE_OPENMP_THREADS
-      // Clear all thread gsyn buffer
+      // Clear all thread gsyn buffer                                                                                                                                                       
       if (thread_gSyn) {
          int numNeurons = post->getNumNeurons();
 #pragma omp parallel for
