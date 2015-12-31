@@ -30,6 +30,7 @@ void pvpatch_accumulate(int kPreExt, int nk, float* restrict v, float a, pvwdata
    for (k = 0; k < nk; k+=sf) {
       accumval = a*w[k];
       v[k] += accumval;
+      //      printf("%p,%p,%f,%f,%f,%f\n", v + k, w + k,accumval,v[k],a,w[k]);
    }
    return err;
 }

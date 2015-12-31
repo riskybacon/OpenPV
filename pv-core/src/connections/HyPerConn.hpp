@@ -36,18 +36,27 @@
 
 namespace PV {
 
+#if 0
 /**
  * Map from a single pre-synaptic neuron to its targets.
  */
 class PreNeuron {
-public:
-   typedef std::pair<pvwdata_t, pvgsyndata_t *> WeightTarget;
+   struct WeightTarget {
+      const pvwdata_t *weight;
+      pvgsyndata_t *target;
 
+      WeightTarget(const pvwdata_t *w, pvgsyndata_t *t) : weight(w), target(t) {}
+   };
+
+   // List of weight,target pairs for this neuron. Only weights that are active are stored on this list
+   std::vector<WeightTarget> _weightTargetList;
+
+public:
    /**
     * Construct an empty pre synaptic neuron map.
     */
    PreNeuron() {}
-   
+
    /**
     * Add a target to this neuron's list, but only if the weight exceeds
     * the specified threshold
@@ -56,23 +65,25 @@ public:
     * @param target The address of the target
     * @param threshold The weight threshold that must be exceeded
     */
-   void addTarget(const pvwdata_t& weight, pvgsyndata_t *target) {
+   void addTarget(const pvwdata_t *weight, pvgsyndata_t *target) {
       _weightTargetList.push_back(WeightTarget(weight, target));
    }
-   
+
    /**
     * Deliver this neuron's perspective to the post layer
     */
    void deliver(pvadata_t activity) {
       for(WeightTarget& weightTarget : _weightTargetList) {
-         // target += activity * dt * weight
-         *(weightTarget.second) += activity * weightTarget.first;
+         float accumval = activity * *(weightTarget.weight);
+         float targetValue = *(weightTarget.target);
+         targetValue += accumval;
+         *(weightTarget.target) = targetValue;
+         //         float targetValue = *target;
+         //         std::cout << weightTarget.first << std::endl;
+         //*(weightTarget.second) = *(weightTarget.second) + accumval;
+         //printf("%p,%p,%f,%f,%f,%f\n", weightTarget.second, weightTarget.first,accumval,*(weightTarget.second), activity, *(weightTarget.first));
       }
    }
-
-private:
-   // List of weight,target pairs for this neuron. Only weights that are active are stored on this list
-    std::vector<WeightTarget> _weightTargetList;
 };
 
 struct PVPatchAccumulate {
@@ -109,7 +120,7 @@ struct PVPatchAccumulate {
     }
   }
 };
-
+#endif
 
 
 //class HyPerCol;
@@ -410,6 +421,7 @@ protected:
    int numDataPatches;   // Number of blocks of pvwdata_t's in buffer pointed to by wDataStart[arbor]
    bool needAllocPostWeights;
 
+#if 0
    std::vector<PreNeuron> _preNeuronList; // Map from neurons -> targets where weights are above the threshold
    int _numDeliverCalls; // Number of times deliver has been called
    unsigned long _totalWeights; // Total number of weights
@@ -420,6 +432,13 @@ protected:
       static const int rebuildInterval = 100;
       return _numDeliverCalls % rebuildInterval == 0;
    }
+#endif
+
+   std::vector<pvadata_t>      activityBuffer;
+   std::vector<int>            activityBufferIndex;
+   std::vector<pvwdata_t>      weightBuffer;
+   std::vector<pvgsyndata_t *> targetDst;
+   std::vector<pvgsyndata_t>   targetBuffer;
 
    std::vector <PlasticCloneConn*> clones; //A vector of plastic clones that are cloning from this connection
 
