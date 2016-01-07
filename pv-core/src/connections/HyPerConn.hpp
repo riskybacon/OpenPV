@@ -20,7 +20,6 @@
 #include "../utils/Timer.hpp"
 #include <stdlib.h>
 #include <vector>
-#include <map>
 
 #ifdef PV_USE_OPENCL
 #include "../arch/opencl/CLKernel.hpp"
@@ -35,92 +34,6 @@
 #define MAX_ARBOR_LIST (1+MAX_NEIGHBORS)
 
 namespace PV {
-
-#if 0
-/**
- * Map from a single pre-synaptic neuron to its targets.
- */
-class PreNeuron {
-   struct WeightTarget {
-      const pvwdata_t *weight;
-      pvgsyndata_t *target;
-
-      WeightTarget(const pvwdata_t *w, pvgsyndata_t *t) : weight(w), target(t) {}
-   };
-
-   // List of weight,target pairs for this neuron. Only weights that are active are stored on this list
-   std::vector<WeightTarget> _weightTargetList;
-
-public:
-   /**
-    * Construct an empty pre synaptic neuron map.
-    */
-   PreNeuron() {}
-
-   /**
-    * Add a target to this neuron's list, but only if the weight exceeds
-    * the specified threshold
-    *
-    * @param weight The address of the weight
-    * @param target The address of the target
-    * @param threshold The weight threshold that must be exceeded
-    */
-   void addTarget(const pvwdata_t *weight, pvgsyndata_t *target) {
-      _weightTargetList.push_back(WeightTarget(weight, target));
-   }
-
-   /**
-    * Deliver this neuron's perspective to the post layer
-    */
-   void deliver(pvadata_t activity) {
-      for(WeightTarget& weightTarget : _weightTargetList) {
-         float accumval = activity * *(weightTarget.weight);
-         float targetValue = *(weightTarget.target);
-         targetValue += accumval;
-         *(weightTarget.target) = targetValue;
-         //         float targetValue = *target;
-         //         std::cout << weightTarget.first << std::endl;
-         //*(weightTarget.second) = *(weightTarget.second) + accumval;
-         //printf("%p,%p,%f,%f,%f,%f\n", weightTarget.second, weightTarget.first,accumval,*(weightTarget.second), activity, *(weightTarget.first));
-      }
-   }
-};
-
-struct PVPatchAccumulate {
-  int nk;
-  pvwdata_t *weightPatch;
-  pvgsyndata_t *postPatch;
-  pvadata_t *activity;
-  int sf;
-  bool hasWeight;
-
-  PVPatchAccumulate(int n, pvwdata_t *wp, pvgsyndata_t *pp, pvadata_t *a, int s)
-    : nk(n), weightPatch(wp), postPatch(pp), activity(a), sf(s) {
-    updateHasWeight();
-  }
-
-  bool operator < (const PVPatchAccumulate& obj) const {
-    return (activity < obj.activity);
-  }
-
-  void updateHasWeight() {
-    pvwdata_t weight = 0;
-    for (int i = 0; i < nk; i++) {
-      weight += weightPatch[nk];
-    }
-
-    hasWeight = weight > 0;
-  }
-
-  void accumulate(float dt_factor) {
-    //    if (hasWeight) {
-    for (int k = 0; k < nk; k += sf) {
-	postPatch[k] += *activity * dt_factor * weightPatch[k];
-	//      }
-    }
-  }
-};
-#endif
 
 
 //class HyPerCol;
@@ -421,25 +334,6 @@ protected:
    int numDataPatches;   // Number of blocks of pvwdata_t's in buffer pointed to by wDataStart[arbor]
    bool needAllocPostWeights;
 
-#if 0
-   std::vector<PreNeuron> _preNeuronList; // Map from neurons -> targets where weights are above the threshold
-   int _numDeliverCalls; // Number of times deliver has been called
-   unsigned long _totalWeights; // Total number of weights
-   /**
-    * @returns true if the pre neuron map needs to be rebuilt
-    */
-   const bool rebuildPreNeuronMapRequired() const {
-      static const int rebuildInterval = 100;
-      return _numDeliverCalls % rebuildInterval == 0;
-   }
-#endif
-
-   std::vector<pvadata_t>      activityBuffer;
-   std::vector<int>            activityBufferIndex;
-   std::vector<pvwdata_t>      weightBuffer;
-   std::vector<pvgsyndata_t *> targetDst;
-   std::vector<pvgsyndata_t>   targetBuffer;
-
    std::vector <PlasticCloneConn*> clones; //A vector of plastic clones that are cloning from this connection
 
    //these were moved to private to ensure use of get/set methods and made in 3D pointers:
@@ -462,8 +356,6 @@ private:
 
    bool needPost;
 
-  //   std::map<pvgsyndata_t *, std::vector<PVPatchAccumulate> > preNeuronArgsMap;
-  //   std::vector<pvgsyndata_t *, std::vector<PVPatchAccumulate> > preNeuronArgs;
 
 protected:
    HyPerConn* postConn;
@@ -551,6 +443,10 @@ protected:
    Random * randState;
 
 
+   std::vector<std::vector<std::vector<int> > >       _sparseDstIdx;
+   std::vector<std::vector<std::vector<pvwdata_t> > > _sparseWeight;
+   unsigned long _numDeliverCalls; // Number of times deliver has been called
+   unsigned long _buildPreListFrequency; // Number of _numDeliverCalls that need to happen before the pre list needs to be rebuilt
 
 protected:
    HyPerConn();
@@ -1000,8 +896,7 @@ protected:
 
    void connOutOfMemory(const char* funcname);
 
-   void buildPreList(PVLayerCube const * activity, const int arborID, const int batch);
-   void deliverOnePreNeuronActivityAddr(int kPreExt, int arbor, pvadata_t *a, pvgsyndata_t * postBufferStart);
+   void buildPreList(const int numPreNeurons, const int arbor);
    virtual int deliverPresynapticPerspective(PVLayerCube const * activity, int arborID);
    virtual int deliverPostsynapticPerspective(PVLayerCube const * activity, int arborID);
 #if defined(PV_USE_OPENCL) || defined(PV_USE_CUDA)

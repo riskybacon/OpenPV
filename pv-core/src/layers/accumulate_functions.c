@@ -22,7 +22,7 @@ void pvpatch_accumulate(int kPreExt, int nk, float* restrict v, float a, pvwdata
    }
 }
 #else
-  int pvpatch_accumulate(int kPreExt, int nk, float* RESTRICT v, float a, pvwdata_t* RESTRICT w, void * auxPtr, int sf)
+int pvpatch_accumulate(int kPreExt, int nk, float* RESTRICT v, float a, pvwdata_t* RESTRICT w, void * auxPtr, int sf)
 {
    int k;
    int err = 0;
@@ -34,6 +34,23 @@ void pvpatch_accumulate(int kPreExt, int nk, float* restrict v, float a, pvwdata
    }
    return err;
 }
+
+
+int pvpatch_accumulate_sparse(int kPreExt, int nk, float* RESTRICT v, float a, pvwdata_t* RESTRICT w, void * auxPtr, int sf)
+{
+   int k;
+   int err = 0;
+   float accumval = 0;
+   int *idx_sparse = (int *)auxPtr;
+
+   for (k = 0; k < nk; k+=sf) {
+      accumval = a*w[k];
+      v[idx_sparse[k]] += accumval;
+      //      v[k] += accumval;
+   }
+   return err;
+}
+
 #endif
 
 int pvpatch_accumulate_from_post(int kPreExt, int nk, float * RESTRICT v, float * RESTRICT a, pvwdata_t * RESTRICT w, float dt_factor, void * auxPtr, int sf) {

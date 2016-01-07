@@ -20,6 +20,9 @@ extern "C" {
   int pvpatch_accumulate_stochastic_from_post(int kPreRes, int nk, float *v, float *a, pvwdata_t *w, float dt_factor, void * auxPtr, int sf);
   int pvpatch_max_pooling_from_post(int kPreRes, int nk, float *v, float *a, pvwdata_t *w, float dt_factor, void * auxPtr, int sf);
   int pvpatch_sumpooling_from_post(int kPreRes, int nk, float * RESTRICT v, float * RESTRICT a, pvwdata_t * RESTRICT w, float dt_factor, void * auxPtr, int sf);
+
+   int pvpatch_accumulate_sparse(int kPreExt, int nk, float* RESTRICT v, float a, pvwdata_t* RESTRICT w, void * auxPtr, int sf);
+
 #ifdef __cplusplus
 }
 #endif
