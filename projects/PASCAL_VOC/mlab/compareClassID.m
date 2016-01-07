@@ -31,16 +31,21 @@ elseif exist("/home/ec2-user/mountData")
 endif
 
 %%run_type = "DCA";
-run_type = "ICA"
+%%run_type = "ICA"
+run_type = "Deep"
 %%run_type = "DCA_Vine";
 %%run_type = "MaxPool"
 %%run_type = "S1S2";
 if strcmp(run_type, "S1S2")
-  output_dir = [data_path, filesep, "PASCAL_VOC/PASCAL_S1_96_S2_1536/VOC2007_landscape27"];
+  output_dir = [data_path, filesep, "PASCAL_VOC/PASCALX3_S1_96_S2_1536/VOC2007_landscape32"];
 elseif strcmp(run_type, "ICA")
-  output_dir = [data_path, filesep, "PASCAL_VOC/PASCAL_S1X4_6144_ICA/VOC2007_landscape2"];
+  %%output_dir = [data_path, filesep, "PASCAL_VOC/PASCAL_S1X16_6144_ICA/VOC2007_landscape1"];
+  %%output_dir = [data_path, filesep, "PASCAL_VOC/PASCAL_S1X4_6144_ICA/VOC2007_landscape4"];
+  %%output_dir = [data_path, filesep, "PASCAL_VOC/PASCAL_S1X16_1536_ICA/VOC2007_portrait9"];
+elseif strcmp(run_type, "Deep")
+  output_dir = [data_path, filesep, "PASCAL_VOC/PASCAL_S1X16_1536_Deep_ICA/VOC2007_landscape1_S1_Movie2"];
 elseif strcmp(run_type, "DCA")
-  output_dir = [data_path, filesep, "PASCAL_VOC/PASCAL_S1_128_S2_256_S3_512_DCA/VOC2007_landscape8"];
+  output_dir = [data_path, filesep, "PASCAL_VOC/PASCAL_S1_128_S2_256_S3_512_DCA/VOC2007_landscape12"];
 elseif strcmp(run_type, "DCA_Vine")
   output_dir = [data_path, filesep, "PASCAL_VOC/PASCAL_S1_128_S2_256_S3_512_DCA/PASCAL_Vine1"];
 elseif strcmp(run_type, "MaxPool")
@@ -435,9 +440,12 @@ for i_scale = i_scale_list
 	box off
 	hold on
 	neg_hist = squeeze(pred_classID_hist(:,i_JIEDDO_classID,2)) ./ squeeze(pred_classID_norm(:,i_JIEDDO_classID,2));
-	bh_neg = bar(classID_hist_bins(bins_tmp_fixed), neg_hist(bins_tmp_fixed), "stacked", "facecolor", "r", "edgecolor", "r");
+	zero_hist_bin = find(classID_hist_bins == 0);
+	neg_hist_nozero = neg_hist;
+	neg_hist_nozero(zero_hist_bin) = 0;
+	bh_neg = bar(classID_hist_bins(bins_tmp_fixed), neg_hist_nozero(bins_tmp_fixed), "stacked", "facecolor", "r", "edgecolor", "r");
 	max_pos_hist = max(pos_hist(:));
-	max_neg_hist = max(neg_hist(:));
+	max_neg_hist = max(neg_hist_nozero(:));
 	lh = line([pred_classID_thresh(i_JIEDDO_classID) pred_classID_thresh(i_JIEDDO_classID)], [0 max(max_pos_hist,max_neg_hist)]);
 	set(lh, 'color', [0 0 1])
 	set(lh, 'linewidth', 1.0)

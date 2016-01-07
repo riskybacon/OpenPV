@@ -44,9 +44,9 @@ if ismac
       {"VOC2007_landscape1"};
     endif
   elseif strcmp(run_type, "VID")
-    output_dir = "/Volumes/mountData/VID/imageNetVid/VID_ILSVRC2015_S1X1_1536_ICA/n02958343_landscape1";
-    checkpoint_parent = "/Volumes/mountData/VID/imageNetVid/VID_ILSVRC2015_S1X1_1536_ICA";
-    checkpoint_children = {"n02958343_landscape1"}; %%
+    output_dir = "/Volumes/mountData/VID/ImageNetVid_S1X1_32X16_4X14frames/train1"
+    checkpoint_parent = "/Volumes/mountData/VID/ImageNetVid_S1X1_32X16_4X14frames"
+    checkpoint_children = {"train1"}; %%
   elseif strcmp(run_type, "JIEDDO") 
     if ~exist("JIEDDO_subtype", "var") || strcmp(JIEDDO_subtype, "CARS")
       output_dir = "/Volumes/mountData/JIEDDO/JIEDDO_S1X4_1536/car_n02958343_2";
@@ -97,25 +97,28 @@ elseif isunix
   %%run_type = "DCNNX3";
   %%run_type = "DBN";
   %%run_type = "experts";
-  %%run_type = "ICA";
+  run_type = "ICA";
   if strcmp(run_type, "experts") 
     output_dir = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1_16_8_4_experts/VOC2007_landscape2";
     checkpoint_parent = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1_16_8_4_experts";
     checkpoint_children = {"VOC2007_landscape2"}; %%
   elseif strcmp(run_type, "DCA")
-    %%output_dir = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1_128_S2_256_S3_512_DCA/VOC2007_landscape12";
-    %%checkpoint_parent = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1_128_S2_256_S3_512_DCA";
-    %%checkpoint_children = {"VOC2007_landscape12"}; %%
-    output_dir = "/nh/compneuro/Data/KITTI/KITTI_S1_128_S2_256_S3_512_DCA/KITTI_train7";
-    checkpoint_parent = "/nh/compneuro/Data/KITTI/KITTI_S1_128_S2_256_S3_512_DCA";
+    %%output_dir = "/home/gkenyon/PASCAL_VOC/PASCAL_S1_128_S2_256_S3_512_DCA/VOC2007_landscape11";
+    %%checkpoint_parent = "/home/gkenyon/PASCAL_VOC/PASCAL_S1_128_S2_256_S3_512_DCA";
+    %%checkpoint_children = {"VOC2007_landscape11"}; %%
+    output_dir = "/home/gkenyon/KITTI/KITTI_S1_128_S2_256_S3_512_DCA/KITTI_train7";
+    checkpoint_parent = "/home/gkenyon/KITTI/KITTI_S1_128_S2_256_S3_512_DCA";
     checkpoint_children = {"KITTI_train7"}; %%
     %%output_dir = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1_128_S2_256_S3_512_DCA/VOC2007_landscape8_xcorr";
     %%checkpoint_parent = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1_128_S2_256_S3_512_DCA";
     %%checkpoint_children = {"VOC2007_landscape8_xcorr"}; %%
   elseif strcmp(run_type, "ICA")
-    output_dir = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1X4_6144_ICA/VOC2007_landscape2";
-    checkpoint_parent = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1X4_6144_ICA";
-    checkpoint_children = {"VOC2007_landscape2"}; %%
+    %%output_dir = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1X4_6144_ICA/VOC2007_landscape4";
+    %%checkpoint_parent = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1X4_6144_ICA";
+    %%checkpoint_children = {"VOC2007_landscape4"}; %%
+    output_dir = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1X16_6144_ICA/VOC2007_landscape1";
+    checkpoint_parent = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1X16_6144_ICA";
+    checkpoint_children = {"VOC2007_landscape1"}; %%
     %%output_dir = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1X16_1536_ICA/VOC2007_landscape9";
     %%checkpoint_parent = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1X16_1536_ICA";
     %%checkpoint_children = {"VOC2007_landscape9"}; %%
@@ -128,9 +131,9 @@ elseif isunix
     checkpoint_parent = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1_128_S2_256_S3_512_MaxPool";
     checkpoint_children = {"VOC2007_landscape10"}; %%
   elseif strcmp(run_type, "CIFAR")
-    output_dir = "/nh/compneuro/Data/CIFAR/CIFAR_S1_48_S2_96_S3_48_DCA/CIFAR10_train6";
+    output_dir = "/nh/compneuro/Data/CIFAR/CIFAR_S1_48_S2_96_S3_48_DCA/CIFAR10_train7";
     checkpoint_parent = "/nh/compneuro/Data/CIFAR/CIFAR_S1_48_S2_96_S3_48_DCA";
-    checkpoint_children = {"CIFAR10_train6"}; %%
+    checkpoint_children = {"CIFAR10_train7"}; %%
   elseif strcmp(run_type, "SLP")
     output_dir = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1_96_S2_1536/VOC2007_landscape2";
     checkpoint_parent = "/nh/compneuro/Data/PASCAL_VOC/PASCAL_S1_96_S2_1536";
@@ -289,7 +292,7 @@ endif  %% plot_StatsProbe_vs_time
 analyze_Sparse_flag = true;
 if analyze_Sparse_flag
   Sparse_frames_list = [];
-  if strcmp(run_type, "default") || strcmp(run_type, "DCA")  || strcmp(run_type, "KITTI")  || strcmp(run_type, "ICA") || strcmp(run_type, "VID")
+  if strcmp(run_type, "default") || strcmp(run_type, "DCA")  || strcmp(run_type, "KITTI")  || strcmp(run_type, "ICA") || strcmp(run_type, "VID") || strcmp(run_type, "CIFAR")
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% DCA list
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -393,7 +396,7 @@ endif
 
 analyze_nonSparse_flag = true;
 if analyze_nonSparse_flag
-  if strcmp(run_type, "default") || strcmp(run_type, "experts") || strcmp(run_type, "DCA") || strcmp(run_type, "KITTI") || strcmp(run_type, "ICA") || strcmp(run_type, "VID")
+  if strcmp(run_type, "default") || strcmp(run_type, "experts") || strcmp(run_type, "DCA") || strcmp(run_type, "KITTI") || strcmp(run_type, "ICA") || strcmp(run_type, "VID") || strcmp(run_type, "CIFAR")
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% default/glob generated list
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -962,7 +965,7 @@ plot_weights0_2_flag = plot_flag;
 plot_labelWeights_flag = true;
 if analyze_weights0_2
   weights1_2_list = {};
-  if strcmp(run_type, "default") || strcmp(run_type, "experts") || strcmp(run_type, "MaxPool") || strcmp(run_type, "KITTI") || strcmp(run_type, "CIFAR") %%  || strcmp(run_type, "DCA")
+  if strcmp(run_type, "default") || strcmp(run_type, "experts") || strcmp(run_type, "MaxPool") || strcmp(run_type, "KITTI") || strcmp(run_type, "CIFAR")  || strcmp(run_type, "DCA")
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% MaxPool
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1004,9 +1007,8 @@ if analyze_weights0_2
     labelWeights_list = {}; %%...
     num_checkpoints = size(checkpoints_list,1);
     weights1_2_pad_size = [0];
-    keyboard
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  elseif strcmp(run_type, "DCA")
+  elseif false %%strcmp(run_type, "DCA")
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% KITTI DCA list
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1809,7 +1811,7 @@ if analyze_weightsN_Nplus1
   
   weightsN_Nplus1_list = {};
   layersN_Nplus1_list = {};
-  if strcmp(run_type, "default") || strcmp(run_type, "experts") || strcmp(run_type, "MaxPool") || strcmp(run_type, "KITTI") || strcmp(run_type, "CIFAR") %%  || strcmp(run_type, "DCA")
+  if strcmp(run_type, "default") || strcmp(run_type, "experts") || strcmp(run_type, "MaxPool") || strcmp(run_type, "KITTI") || strcmp(run_type, "CIFAR")   || strcmp(run_type, "DCA")
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% MaxPool
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1852,7 +1854,7 @@ if analyze_weightsN_Nplus1
     labelWeights_list = {[], []}; %%...
     num_checkpoints = size(checkpoints_list,1);
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  elseif strcmp(run_type, "DCA")
+  elseif false %%strcmp(run_type, "DCA")
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %% DCA KITTI list
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

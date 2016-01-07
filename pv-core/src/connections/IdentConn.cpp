@@ -279,6 +279,7 @@ int IdentConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
    assert(post->getChannel(getChannel()));
 
    float dt_factor = getConvertToRateDeltaTimeFactor();
+   assert(dt_factor==1.0);
 
    const PVLayerLoc * preLoc = preSynapticLayer()->getLayerLoc();
    const PVLayerLoc * postLoc = postSynapticLayer()->getLayerLoc();
@@ -307,8 +308,8 @@ int IdentConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
          for (int loopIndex = 0; loopIndex < numLoop; loopIndex++) {
             int kPre = activeIndicesBatch[loopIndex];
 
-            float a = activityBatch[kPre] * dt_factor;
-            if (a == 0.0f) continue;
+            float a = activityBatch[kPre];
+            // if (a == 0.0f) continue;
             PVPatch * weights = getWeights(kPre, arborID);
             if (weights->nx>0 && weights->ny>0) {
                int f = featureIndex(kPre, preLoc->nx, preLoc->ny, preLoc->nf); // Not taking halo into account, but for feature index, shouldn't matter.
@@ -319,16 +320,32 @@ int IdentConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
       }
       else {
          PVLayerLoc const * loc = &activity->loc;
+         PVHalo const * halo = &loc->halo;
+         // The code below is a replacement for the block marked obsolete below it.  Jan 5, 2016
+         int lineSizeExt = (loc->nx+halo->lt+halo->rt)*loc->nf;
+#ifdef PV_USE_OPENMP_THREADS
+#pragma omp parallel for
+#endif
+         for (int y=0; y<loc->ny; y++) {
+            pvdata_t * lineStartPreActivity = &activityBatch[(y+halo->up)*lineSizeExt+halo->lt*loc->nf];
+            int nk = loc->nx*loc->nf;
+            pvdata_t * lineStartPostGSyn = &gSynPatchHeadBatch[y*nk];
+            for (int k=0; k<nk; k++) {
+               lineStartPostGSyn[k] += lineStartPreActivity[k];
+            }
+         }
+#ifdef OBSOLETE // Marked obsolete Jan 5, 2016.  IdentConn is simple enough that we shouldn't need to call kIndexExtended inside the inner loop.
          int numRestricted = loc->nx * loc->ny * loc->nf;
 #ifdef PV_USE_OPENMP_THREADS
 #pragma omp parallel for
 #endif
          for (int kRestricted = 0; kRestricted < numRestricted; kRestricted++) {
             int kExtended = kIndexExtended(kRestricted, loc->nx, loc->ny, loc->nf, loc->halo.lt, loc->halo.rt, loc->halo.dn, loc->halo.up);
-            float a = activityBatch[kExtended] * dt_factor;
-            if (a == 0.0f) continue;
+            float a = activityBatch[kExtended];
+            // if (a == 0.0f) continue;
             gSynPatchHeadBatch[kRestricted] += a;
          }
+#endif // OBSOLETE // Marked obsolete Jan 5, 2016
       }
    }
    return PV_SUCCESS;
