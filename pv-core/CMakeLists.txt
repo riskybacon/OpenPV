@@ -62,6 +62,13 @@ foreach(LIN ${contents})
    set(PVLibSrc ${PVLibSrc} ${libSrcCPP})
    set(PVLibSrc ${PVLibSrc} ${libSrcC})
 
+   if (PV_INCLUDE_HEADERS)
+      file(GLOB libSrcHPP ${LIN}/*.h)
+      file(GLOB libSrcH ${LIN}/*.hpp)
+      set(PVLibSrc ${PVLibSrc} ${libSrcHPP})
+      set(PVLibSrc ${PVLibSrc} ${libSrcH})
+   endif()
+
    if(PV_USE_CUDA)
       file(GLOB_RECURSE libSrcCU ${LIN}/*.cu)
       set(PVLibSrcCu ${PVLibSrcCu} ${libSrcCU})
