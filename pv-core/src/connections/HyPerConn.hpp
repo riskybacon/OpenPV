@@ -445,6 +445,8 @@ protected:
 
    std::vector<std::vector<std::vector<int> > >       _sparseDstIdx;
    std::vector<std::vector<std::vector<pvwdata_t> > > _sparseWeight;
+   std::vector<std::vector<std::vector<pvadata_t> > > _sparseAccumulator;
+   
    unsigned long _numDeliverCalls; // Number of times deliver has been called
    unsigned long _buildPreListFrequency; // Number of _numDeliverCalls that need to happen before the pre list needs to be rebuilt
 

@@ -45,6 +45,7 @@ int pvpatch_accumulate_sparse(int kPreExt, int nk, float* RESTRICT v, float a, p
 
    for (k = 0; k < nk; k+=sf) {
       accumval = a*w[k];
+      //      fprintf(stderr, "v: %p w: %p, i: %p\n", &v[idx_sparse[k]], &w[k], &idx_sparse[k]);
       v[idx_sparse[k]] += accumval;
       //      v[k] += accumval;
    }
