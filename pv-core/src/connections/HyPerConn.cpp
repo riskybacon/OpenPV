@@ -3518,8 +3518,9 @@ void HyPerConn::allocateSparseWeights(PVLayerCube const * activity, const int ar
    int numPatches = getNumDataPatches();
    size_t totalWeights = numWeights();
    size_t numSparse = numSparseWeights(arbor, threshold);
+   numSparse = numWeights();
 
-   // Clear the sparse data structs
+   // Dealloc existing sparse data structs.
    _sparseWeight.clear();
    _sparseWeightIndex.clear();
    _patchSparseWeightCount.clear();
@@ -3544,11 +3545,11 @@ void HyPerConn::allocateSparseWeights(PVLayerCube const * activity, const int ar
       // if they're below the threshold
       int sparseWeightCount = 0;
       for (int k = 0; k < nxp * nyp * nfp; k++) {
-         if (fabsf(weight[k]) > threshold) {
+         //         if (fabsf(weight[k]) > threshold) {
             _sparseWeight.push_back(weight[k]);
             _sparseWeightIndex.push_back(k);
             sparseWeightCount++;
-         }
+         //         }
       }
 
       _patchSparseWeightCount.push_back(sparseWeightCount);
@@ -3568,6 +3569,8 @@ void HyPerConn::allocateSparseWeights(PVLayerCube const * activity, const int ar
    // #endif
 }
 
+#if 1
+// Sparse weights implementation
 int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arbor) {
    assert(arbor >= 0);
    // Check if we need to update based on connection's channel
@@ -3661,7 +3664,9 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
    return PV_SUCCESS;
 }
 
-#if 0
+#else
+
+// Original implementation
 int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arbor) {
 
    //Check if we need to update based on connection's channel
@@ -3772,6 +3777,7 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
    }
    return PV_SUCCESS;
 }
+
 #endif
 
 
