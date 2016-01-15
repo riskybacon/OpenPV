@@ -218,6 +218,10 @@ public:
       return wDataStart[arborId];
    }
 
+   inline const pvwdata_t* get_wDataStartConst(int arborId) const {
+      return wDataStart[arborId];
+   }
+
    inline pvwdata_t* get_wDataHead(int arborId, int dataIndex) {
       return &wDataStart[arborId][patchStartIndex(dataIndex)];
    }
@@ -266,11 +270,11 @@ public:
       return wPostDataStart[arbor];
    }
 
-   int getNumWeightPatches() {
+   int getNumWeightPatches() const {
       return numWeightPatches;
    }
 
-   int getNumDataPatches() {
+   int getNumDataPatches() const {
       return numDataPatches;
    }
 
@@ -442,13 +446,39 @@ protected:
    // uint4 * rnd_state; // An array of RNGs.
    Random * randState;
 
+   const size_t numWeights() const {
+      return getNumDataPatches() * nxp * nyp * nfp;
+   }
 
-   std::vector<std::vector<std::vector<int> > >       _sparseDstIdx;
-   std::vector<std::vector<std::vector<pvwdata_t> > > _sparseWeight;
-   std::vector<std::vector<std::vector<pvadata_t> > > _sparseAccumulator;
-   
+   const size_t numSparseWeights(int arbor, pvwdata_t threshold) const {
+      const pvwdata_t *weights = get_wDataStartConst(arbor);
+      size_t numSparse = 0;
+
+      for (int idx = 0; idx < numWeights(); idx++) {
+         if (fabsf(weights[idx]) > threshold) {
+            numSparse++;
+         }
+      }
+
+      return numSparse;
+   }
+
+   typedef std::vector<pvwdata_t> WeightListType;
+   typedef std::vector<pvgsyndata_t> PostListType;
+
+   // All weights that are above the threshold
+   WeightListType _sparseWeight;
+   // The original position of this weight in the patch
+   std::vector<unsigned long> _sparseWeightIndex;
+   // Start of sparse weight data in the _sparseWeight array.
+   // The index is the data patch number.
+   std::vector<int> _patchSparseWeightIndex;
+   // Number of sparse weights for a patch
+   // The index is the data patch number
+   std::vector<int> _patchSparseWeightCount;
+
    unsigned long _numDeliverCalls; // Number of times deliver has been called
-   unsigned long _buildPreListFrequency; // Number of _numDeliverCalls that need to happen before the pre list needs to be rebuilt
+   unsigned long _allocateSparseWeightsFrequency; // Number of _numDeliverCalls that need to happen before the pre list needs to be rebuilt
 
 protected:
    HyPerConn();
@@ -898,7 +928,8 @@ protected:
 
    void connOutOfMemory(const char* funcname);
 
-   void buildPreList(const int numPreNeurons, const int arbor);
+   void allocateSparseWeights(PVLayerCube const * const activity, const int arbor);
+
    virtual int deliverPresynapticPerspective(PVLayerCube const * activity, int arborID);
    virtual int deliverPostsynapticPerspective(PVLayerCube const * activity, int arborID);
 #if defined(PV_USE_OPENCL) || defined(PV_USE_CUDA)
