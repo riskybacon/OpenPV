@@ -20,7 +20,6 @@
 #include "../utils/Timer.hpp"
 #include <stdlib.h>
 #include <vector>
-#include "../utils/pv_log.h"
 
 #ifdef PV_USE_OPENCL
 #include "../arch/opencl/CLKernel.hpp"
@@ -35,6 +34,7 @@
 #define MAX_ARBOR_LIST (1+MAX_NEIGHBORS)
 
 namespace PV {
+
 
 //class HyPerCol;
 //class HyPerLayer;
@@ -218,10 +218,6 @@ public:
       return wDataStart[arborId];
    }
 
-   inline const pvwdata_t* get_wDataStartConst(int arborId) const {
-      return wDataStart[arborId];
-   }
-
    inline pvwdata_t* get_wDataHead(int arborId, int dataIndex) {
       return &wDataStart[arborId][patchStartIndex(dataIndex)];
    }
@@ -270,11 +266,11 @@ public:
       return wPostDataStart[arbor];
    }
 
-   int getNumWeightPatches() const {
+   int getNumWeightPatches() {
       return numWeightPatches;
    }
 
-   int getNumDataPatches() const {
+   int getNumDataPatches() {
       return numDataPatches;
    }
 
@@ -288,10 +284,6 @@ public:
 
    NormalizeBase * getNormalizer() {
       return normalizer;
-   }
-
-   bool getNormalizeDwFlag() {
-      return normalizeDwFlag;
    }
 
    PVPatch*** convertPreSynapticWeights(double time);
@@ -363,19 +355,6 @@ private:
 
    bool needPost;
 
-   // All weights that are above the threshold
-   typedef std::vector<pvwdata_t> WeightListType;
-   WeightListType _sparseWeight;
-   // The output offset into the post layer for a weight
-   std::vector<int> _sparsePost;
-   // Start of sparse weight data in the _sparseWeight array, indexed by data patch
-   std::vector<int> _patchSparseWeightIndex;
-   // Number of sparse weights for a patch, indexed by data patch
-   std::vector<int> _patchSparseWeightCount;
-   bool _sparseWeightsAllocated;
-
-   unsigned long _numDeliverCalls; // Number of times deliver has been called
-   unsigned long _allocateSparseWeightsFrequency; // Number of _numDeliverCalls that need to happen before the pre list needs to be rebuilt
 
 protected:
    HyPerConn* postConn;
@@ -385,8 +364,6 @@ protected:
    int maskFeatureIdx;
    HyPerLayer* mask;
    bool* batchSkip;
-
-   bool normalizeDwFlag;
 
    int nxp, nyp, nfp; // size of weight dimensions
    bool warnDefaultNfp; // Whether to print a warning if the default nfp is used.
@@ -464,33 +441,7 @@ protected:
    // taus_uint4 * rnd_state; // An array of RNGs.
    Random * randState;
 
-   const size_t numWeights() const {
-      return getNumDataPatches() * nxp * nyp * nfp;
-   }
 
-   size_t numSparseWeights(pvwdata_t threshold) const {
-      size_t numSparse = 0;
-      size_t patchSize = nxp * nyp * nfp;
-
-      for (int ar = 0; ar < numAxonalArborLists; ar++) {
-         // Loop over all independent data patches, add the weights that are above the threshold
-         for (int pt = 0; pt < getNumDataPatches(); pt++) {
-            // Get the start of the weight data for this patch
-            pvwdata_t *weight = &wDataStart[ar][pt * patchSize];
-            if (weight != NULL) {
-               // Add above threshold weights to the sparse data structure
-               for (int k = 0; k < nyp * nxp * nfp; k++) {
-                  pvwdata_t w = weight[k];
-                  if (fabsf(w) >= threshold) {
-                     numSparse++;
-                  }
-               }
-            }
-         }
-      }
-      return numSparse;
-   }
-   
 
 protected:
    HyPerConn();
@@ -798,11 +749,6 @@ protected:
    virtual void ioParam_keepKernelsSynchronized(enum ParamsIOFlag ioFlag);
    
    /**
-    * @brief normalizeDw: Specifies if this connection is averaging gradients (true) or summing them (false)
-    */
-   virtual void ioParam_normalizeDw(enum ParamsIOFlag ioFlag);
-
-   /**
     * @brief useMask: Specifies if this connection is using a post mask for learning
     */
    virtual void ioParam_useMask(enum ParamsIOFlag ioFlag);
@@ -914,9 +860,6 @@ protected:
    virtual int normalize_dW(int arbor_ID);
 
    void connOutOfMemory(const char* funcname);
-
-   //   void allocateSparseWeights(PVLayerCube const * const activity, const int arbor);
-   void allocateSparseWeights();
 
    virtual int deliverPresynapticPerspective(PVLayerCube const * activity, int arborID);
    virtual int deliverPostsynapticPerspective(PVLayerCube const * activity, int arborID);
