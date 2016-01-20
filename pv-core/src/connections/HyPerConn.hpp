@@ -450,6 +450,14 @@ protected:
       return getNumDataPatches() * nxp * nyp * nfp;
    }
 
+   // Apply a function to all weights. The weights will be unchanged
+   template<class Function>
+   void forWeights(int arbor, Function &&f) {
+      pvwdata_t *start = get_wDataStart(arbor);
+      const pvwdata_t *end = &start[numWeights()];
+      std::for_each(start, end, f);
+   }
+
    const size_t numSparseWeights(int arbor, pvwdata_t threshold) const {
       const pvwdata_t *weights = get_wDataStartConst(arbor);
       size_t numSparse = 0;

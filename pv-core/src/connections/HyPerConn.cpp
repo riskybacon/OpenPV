@@ -24,6 +24,7 @@
 #include "PlasticCloneConn.hpp"
 #include "../io/CoreParamGroupHandler.hpp"
 #include <limits>
+#include "../include/parallel.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -3622,10 +3623,10 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
          int kPreExt = activity->isSparse ? activeIndicesBatch[neuron] : neuron;
 
          float a = activityBatch[kPreExt] * dt_factor;
-         if (a == 0.0f) continue;
 
          // If we're using thread_gSyn, set this here
          pvdata_t *postBufferStart = gSynPatchHeadBatch;
+
 #ifdef PV_USE_OPENMP_THREADS
          if(thread_gSyn){
             int ti = omp_get_thread_num();
