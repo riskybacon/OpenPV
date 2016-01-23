@@ -3524,22 +3524,13 @@ void HyPerConn::allocateSparseWeights(PVLayerCube const * activity, const int ar
 
    // Dealloc existing sparse data structs.
    _sparseWeight.clear();
-   _sparseWeightIndex.clear();
+   _sparsePost.clear();
    _patchSparseWeightCount.clear();
    _patchSparseWeightIndex.clear();
-   _sparseWeightX.clear();
-   _sparseWeightY.clear();
-   _sparseWeightF.clear();
-   _sparsePost.clear();
 
    // Reserve memory for sparse data structs
    _sparseWeight.reserve(numSparse);
-   _sparseWeightIndex.reserve(numSparse);
-   _sparseWeightX.reserve(numSparse);
-   _sparseWeightY.reserve(numSparse);
-   _sparseWeightF.reserve(numSparse);
    _sparsePost.reserve(numSparse);
-
    _patchSparseWeightIndex.reserve(numPatches);
    _patchSparseWeightCount.reserve(numPatches);
 
@@ -3577,7 +3568,6 @@ void HyPerConn::allocateSparseWeights(PVLayerCube const * activity, const int ar
             for (int k = 0; k < nxp * nfp; k++, postIdx++, pos++) {
                pvwdata_t w = weight[pos];
                if (fabsf(w) >= threshold) {
-                  _sparseWeightIndex.push_back(pos);
                   _sparseWeight.push_back(w);
                   _sparsePost.push_back(postIdx);
                   sparseWeightCount++;
@@ -3599,27 +3589,20 @@ void HyPerConn::allocateSparseWeights(PVLayerCube const * activity, const int ar
    log_debug(" Weight sparse ratio:     %d/%d (%.2f\%    %d MB)", _sparseWeight.size(), totalWeights, sparsePercentage, sparseSize);
 }
 
-#if 1
-// Sparse weights implementation
 int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arbor) {
-   //   pv_assert(10 == 3, "Wtf? %d != %d", 10, 3);
-
    //Check if we need to update based on connection's channel
    if(getChannel() == CHANNEL_NOUPDATE){
       return PV_SUCCESS;
    }
    assert(post->getChannel(getChannel()));
-   float dt_factor;
+
+   float dt_factor = getConvertToRateDeltaTimeFactor();
    if (getPvpatchAccumulateType()==ACCUMULATE_STOCHASTIC) {
       dt_factor = getParent()->getDeltaTime();
    }
-   else {
-      dt_factor = getConvertToRateDeltaTimeFactor();
-   }
 
-   const PVLayerLoc * preLoc = preSynapticLayer()->getLayerLoc();
-   const PVLayerLoc * postLoc = postSynapticLayer()->getLayerLoc();
-
+   const PVLayerLoc *preLoc = preSynapticLayer()->getLayerLoc();
+   const PVLayerLoc *postLoc = postSynapticLayer()->getLayerLoc();
 
    assert(arbor >= 0);
    const int numExtended = activity->numItems;
@@ -3631,7 +3614,6 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
    printf("[%d]: HyPerLayr::recvSyn: neighbor=%d num=%d actv=%p this=%p conn=%p\n", rank, 0, numExtended, activity, this, conn);
    fflush(stdout);
 #endif // DEBUG_OUTPUT
-
 
    int nbatch = parent->getNBatch();
 
@@ -3645,12 +3627,12 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
 
 
 #ifdef PV_USE_OPENMP_THREADS
-      //Clear all thread gsyn buffer
-      if (thread_gSyn){
+      // Clear all thread gsyn buffer
+      if (thread_gSyn) {
          int numNeurons = post->getNumNeurons();
 #pragma omp parallel for
          for (int i = 0; i < parent->getNumThreads() * numNeurons; i++) {
-            int ti = i/numNeurons;
+            int ti = i / numNeurons;
             int ni = i % numNeurons;
             thread_gSyn[ti][ni] = 0;
          }
@@ -3668,64 +3650,43 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
          float a = activityBatch[kPreExt] * dt_factor;
          if (a == 0.0f) continue;
 
-         // If we're using thread_gSyn, set this here
-         pvdata_t * postBufferStart = gSynPatchHeadBatch;
+         pvdata_t *postStart = gSynPatchHeadBatch;
 
 #ifdef PV_USE_OPENMP_THREADS
-         if(thread_gSyn){
+         if (thread_gSyn) {
             int ti = omp_get_thread_num();
-            postBufferStart = thread_gSyn[ti];
+            postStart = thread_gSyn[ti];
          }
 #endif // PV_USE_OPENMP_THREADS
 
          PVPatch *weights = getWeights(kPreExt, arbor);
-         pvgsyndata_t * postPatchStart = postBufferStart + getGSynPatchStart(kPreExt, arbor);
-         const int sy  = getPostNonextStrides()->sy;       // stride in layer
-
+         pvgsyndata_t *post = postStart + getGSynPatchStart(kPreExt, arbor);
          const int nk = weights->nx * fPatchSize();
          const int ny = weights->ny;
-         const int syw = yPatchStride();                   // stride in patch
-
 
          if (weights->nx == nxp && weights->ny == nyp) {
             // Patch is not shrunken, use sparse weights
-
-            // Offset into sparse data structures
             int offset = patchStartIndex(patchToDataLUT(kPreExt));
-            pvwdata_t *weights = &_sparseWeight[offset];
             int *outIdx = &_sparsePost[offset];
+            pvwdata_t *start = &_sparseWeight[offset];
+            pvwdata_t *end = &_sparseWeight[offset + nk * ny];
 
-            for (int k = 0; k < nk * ny; k++) {
-               postPatchStart[outIdx[k]] += a * weights[k];
+            for (pvwdata_t *weight = start; weight != end; weight++, outIdx++) {
+               post[*outIdx] += a * *weight; // v += a * w
             }
          } else {
             // Shrunken patch, don't use sparse data
-#ifdef TEST_SPARSE_WEIGHTS_EXCEPT_THEYRE_NOT_ACTUALLY_SPARSE_BECAUSE_DUH_TESTING
-            // Test case for using the sparse data in the non-sparse handler.
-            // Use this if the threshold is zero and the sparse data isn't sparse
-            // at all. This verifies that the copy is happening correctly
-            int weightIdx = patchStartIndex(patchToDataLUT(kPreExt)) + wPatches[arbor][kPreExt]->offset;
-            pvwdata_t *weightDataStart = &_sparseWeight.at(weightIdx);
-
-            for (int y = 0; y < ny; y++) {
-               int postIdx = y * sy;
-               int weightIdx = y * syw;
-               for (int k = 0; k < nk; k++, postIdx++, weightIdx++) {
-                  postPatchStart[postIdx] += a * weightDataStart[weightIdx];
-               }
-            }
-#else
-            // George McFly says, "I am your density". Get a pointer to the dense weight data.
-            pvwdata_t *weightDataStart = get_wData(arbor,kPreExt);
+            pvwdata_t *weight = get_wData(arbor,kPreExt);
+            const int sy  = getPostNonextStrides()->sy;       // stride in layer
+            const int syw = yPatchStride();                   // stride in patch
 
             int sf = 1;
             for (int y = 0; y < ny; y++) {
-               pvwdata_t *w = weightDataStart + y * syw;
-               pvgsyndata_t *v = postPatchStart + y * sy;
+               pvwdata_t *w = weight + y * syw;
+               pvgsyndata_t *v = post + y * sy;
+               // TODO: this should be an inline function. Use a functor and templatize
                (accumulateFunctionPointer)(0, nk, v, a, w, NULL, sf);
             }
-            
-#endif
          }
       }
 
@@ -3747,123 +3708,6 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
    }
    return PV_SUCCESS;
 }
-
-#else
-
-// Original implementation
-int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arbor) {
-
-   //Check if we need to update based on connection's channel
-   if(getChannel() == CHANNEL_NOUPDATE){
-      return PV_SUCCESS;
-   }
-   assert(post->getChannel(getChannel()));
-
-   float dt_factor;
-   if (getPvpatchAccumulateType()==ACCUMULATE_STOCHASTIC) {
-      dt_factor = getParent()->getDeltaTime();
-   }
-   else {
-      dt_factor = getConvertToRateDeltaTimeFactor();
-   }
-
-   const PVLayerLoc * preLoc = preSynapticLayer()->getLayerLoc();
-   const PVLayerLoc * postLoc = postSynapticLayer()->getLayerLoc();
-
-
-   assert(arbor >= 0);
-   const int numExtended = activity->numItems;
-
-#ifdef DEBUG_OUTPUT
-   int rank;
-   MPI_Comm_rank(parent->icCommunicator()->communicator(), &rank);
-   //printf("[%d]: HyPerLayr::recvSyn: neighbor=%d num=%d actv=%p this=%p conn=%p\n", rank, neighbor, numExtended, activity, this, conn);
-   printf("[%d]: HyPerLayr::recvSyn: neighbor=%d num=%d actv=%p this=%p conn=%p\n", rank, 0, numExtended, activity, this, conn);
-   fflush(stdout);
-#endif // DEBUG_OUTPUT
-
-
-   int nbatch = parent->getNBatch();
-
-   for(int b = 0; b < nbatch; b++){
-      pvdata_t * activityBatch = activity->data + b * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
-      pvdata_t * gSynPatchHeadBatch = post->getChannel(getChannel()) + b * postLoc->nx * postLoc->ny * postLoc->nf;
-      unsigned int * activeIndicesBatch = NULL;
-      if(activity->isSparse){
-         activeIndicesBatch = activity->activeIndices + b * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
-      }
-
-
-#ifdef PV_USE_OPENMP_THREADS
-      //Clear all thread gsyn buffer
-      if (thread_gSyn){
-         int numNeurons = post->getNumNeurons();
-#pragma omp parallel for
-         for (int i = 0; i < parent->getNumThreads() * numNeurons; i++) {
-            int ti = i/numNeurons;
-            int ni = i % numNeurons;
-            thread_gSyn[ti][ni] = 0;
-         }
-      }
-#endif // PV_USE_OPENMP_THREADS
-
-      int numNeurons = activity->isSparse ? activity->numActive[b] : numExtended;
-
-#ifdef PV_USE_OPENMP_THREADS
-#pragma omp parallel for schedule(static)
-#endif
-      for (int neuron = 0; neuron < numNeurons; neuron++) {
-         int kPreExt = activity->isSparse ? activeIndicesBatch[neuron] : neuron;
-
-         float a = activityBatch[kPreExt] * dt_factor;
-         if (a == 0.0f) continue;
-
-         // If we're using thread_gSyn, set this here
-         pvdata_t * postBufferStart = gSynPatchHeadBatch;
-#ifdef PV_USE_OPENMP_THREADS
-         if(thread_gSyn){
-            int ti = omp_get_thread_num();
-            postBufferStart = thread_gSyn[ti];
-         }
-#endif // PV_USE_OPENMP_THREADS
-
-         PVPatch * weights = getWeights(kPreExt, arbor);
-         const int nk = weights->nx * fPatchSize();
-         const int ny = weights->ny;
-         const int sy  = getPostNonextStrides()->sy;       // stride in layer
-         const int syw = yPatchStride();                   // stride in patch
-         pvwdata_t * weightDataStart = get_wData(arbor,kPreExt);
-         pvgsyndata_t * postPatchStart = postBufferStart + getGSynPatchStart(kPreExt, arbor);
-         int sf = 1;
-
-         for (int y = 0; y < ny; y++) {
-            pvwdata_t *w = weightDataStart + y * syw;
-            pvgsyndata_t *v = postPatchStart + y * sy;
-            (accumulateFunctionPointer)(0, nk, v, a, w, NULL, sf);
-         }
-      }
-
-#ifdef PV_USE_OPENMP_THREADS
-      //Accumulate back into gSyn // Should this be done in HyPerLayer where it can be done once, as opposed to once per connection?
-      if(thread_gSyn){
-         pvdata_t * gSynPatchHead = gSynPatchHeadBatch;
-         int numNeurons = post->getNumNeurons();
-         //Looping over neurons first to be thread safe
-#pragma omp parallel for
-         for(int ni = 0; ni < numNeurons; ni++){
-            for(int ti = 0; ti < parent->getNumThreads(); ti++){
-               gSynPatchHead[ni] += thread_gSyn[ti][ni];
-            }
-         }
-      }
-#endif
-
-   }
-   return PV_SUCCESS;
-}
-
-#endif
-
 
 int HyPerConn::deliverPostsynapticPerspective(PVLayerCube const * activity, int arborID) {
    //Check channel number for noupdate
@@ -4271,32 +4115,9 @@ void HyPerConn::deliverOnePostNeuronActivity(int arborID, int kTargetExt, int in
    }
 }
 
-#if 0
-void HyPerConn::deliverOnePreNeuronActivity(int kPreExt, int arbor, pvadata_t a, pvgsyndata_t * postBufferStart, void * auxPtr) {
-   WeightsProcessed *weightsProcessed = (WeightsProcessed *)auxPtr;
-
-   PVPatch * weights = getWeights(kPreExt, arbor);
-   const int nk = weights->nx * fPatchSize();
-   const int ny = weights->ny;
-   const int sy  = getPostNonextStrides()->sy;       // stride in layer
-   const int syw = yPatchStride();                   // stride in patch
-   pvwdata_t * weightDataStart = NULL;
-   pvgsyndata_t * postPatchStart = postBufferStart + getGSynPatchStart(kPreExt, arbor);
-   int offset = 0;
-   int sf = 1;
-   weightDataStart = get_wData(arbor,kPreExt); // make this a pvwdata_t const *?
-   weightsProcessed->expected += ny * nk;
-   for (int y = 0; y < ny; y++) {
-      pvwdata_t *weightPatch = &_sparseWeight[kPreExt][y][0];
-      void *auxPtr = (void *) &_sparseDstIdx[kPreExt][y][0];
-      const int nk = _sparseWeight[kPreExt][y].size();
-      if (nk > 0) {
-         weightsProcessed->total += nk;
-         (accumulateFunctionPointer)(0, nk, postPatchStart + y*sy + offset, a, weightPatch, auxPtr, sf);
-      }
-   }
-}
-#endif
+#ifdef OBSOLETE
+// A vtable access in a tight loop? Nooope. That's bad. This function was inlined into deliverPresynapticPerspective.
+// Delete this code after April 2016
 void HyPerConn::deliverOnePreNeuronActivity(int kPreExt, int arbor, pvadata_t a, pvgsyndata_t * postBufferStart, void * auxPtr) {
    PVPatch * weights = getWeights(kPreExt, arbor);
    const int nk = weights->nx * fPatchSize();
@@ -4312,6 +4133,7 @@ void HyPerConn::deliverOnePreNeuronActivity(int kPreExt, int arbor, pvadata_t a,
       (accumulateFunctionPointer)(0, nk, postPatchStart + y*sy + offset, a, weightDataStart + y*syw + offset, auxPtr, sf);
    }
 }
+#endif
 
 int HyPerConn::createWeights(PVPatch *** patches, int nWeightPatches, int nDataPatches, int nxPatch,
       int nyPatch, int nfPatch, int arborId)

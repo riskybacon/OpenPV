@@ -35,11 +35,6 @@
 
 namespace PV {
 
-struct PVSparsePatch {
-   std::vector<int> start;
-   std::vector<int> size;
-};
-
 //class HyPerCol;
 //class HyPerLayer;
 class InitWeights;
@@ -470,29 +465,15 @@ protected:
       return numSparse;
    }
 
-   typedef std::vector<pvwdata_t> WeightListType;
-   typedef std::vector<pvgsyndata_t> PostListType;
-
    // All weights that are above the threshold
+   typedef std::vector<pvwdata_t> WeightListType;
    WeightListType _sparseWeight;
-   // The index of weight in _sparseWeight in the non-sparse data patch
-   std::vector<unsigned long> _sparseWeightIndex;
-   // The x coord of a sparse weight in the patch
-   std::vector<int> _sparseWeightX;
-   // The y coord of a sparse weight in the patch
-   std::vector<int> _sparseWeightY;
-   // The f coord of a sparse weight in the patch
-   std::vector<int> _sparseWeightF;
    // The output offset into the post layer for a weight
    std::vector<int> _sparsePost;
    // Start of sparse weight data in the _sparseWeight array, indexed by data patch
    std::vector<int> _patchSparseWeightIndex;
    // Number of sparse weights for a patch, indexed by data patch
    std::vector<int> _patchSparseWeightCount;
-   // Maps patch geometry into the sparse data patches
-   std::vector< std::vector<PVSparsePatch> > _sparsePatch;
-
-   std::vector< std::vector< std::vector< std::vector<int> > > > _destIdx;
 
    unsigned long _numDeliverCalls; // Number of times deliver has been called
    unsigned long _allocateSparseWeightsFrequency; // Number of _numDeliverCalls that need to happen before the pre list needs to be rebuilt
