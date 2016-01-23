@@ -35,7 +35,6 @@
 
 namespace PV {
 
-
 //class HyPerCol;
 //class HyPerLayer;
 class InitWeights;
@@ -218,6 +217,10 @@ public:
       return wDataStart[arborId];
    }
 
+   inline const pvwdata_t* get_wDataStartConst(int arborId) const {
+      return wDataStart[arborId];
+   }
+
    inline pvwdata_t* get_wDataHead(int arborId, int dataIndex) {
       return &wDataStart[arborId][patchStartIndex(dataIndex)];
    }
@@ -266,11 +269,11 @@ public:
       return wPostDataStart[arbor];
    }
 
-   int getNumWeightPatches() {
+   int getNumWeightPatches() const {
       return numWeightPatches;
    }
 
-   int getNumDataPatches() {
+   int getNumDataPatches() const {
       return numDataPatches;
    }
 
@@ -441,7 +444,38 @@ protected:
    // taus_uint4 * rnd_state; // An array of RNGs.
    Random * randState;
 
+   const size_t numWeights() const {
+      return getNumDataPatches() * nxp * nyp * nfp;
+   }
 
+   const size_t numSparseWeights(pvwdata_t threshold) const {
+      size_t numSparse = 0;
+
+      for (int arbor = 0; arbor < numAxonalArborLists; arbor++) {
+         const pvwdata_t *weights = get_wDataStartConst(arbor);
+
+         for (int idx = 0; idx < numWeights(); idx++) {
+            if (fabsf(weights[idx]) >= threshold) {
+               numSparse++;
+            }
+         }
+      }
+
+      return numSparse;
+   }
+
+   // All weights that are above the threshold
+   typedef std::vector<pvwdata_t> WeightListType;
+   WeightListType _sparseWeight;
+   // The output offset into the post layer for a weight
+   std::vector<int> _sparsePost;
+   // Start of sparse weight data in the _sparseWeight array, indexed by data patch
+   std::vector<int> _patchSparseWeightIndex;
+   // Number of sparse weights for a patch, indexed by data patch
+   std::vector<int> _patchSparseWeightCount;
+
+   unsigned long _numDeliverCalls; // Number of times deliver has been called
+   unsigned long _allocateSparseWeightsFrequency; // Number of _numDeliverCalls that need to happen before the pre list needs to be rebuilt
 
 protected:
    HyPerConn();
@@ -860,6 +894,8 @@ protected:
    virtual int normalize_dW(int arbor_ID);
 
    void connOutOfMemory(const char* funcname);
+
+   void allocateSparseWeights(PVLayerCube const * const activity, const int arbor);
 
    virtual int deliverPresynapticPerspective(PVLayerCube const * activity, int arborID);
    virtual int deliverPostsynapticPerspective(PVLayerCube const * activity, int arborID);
