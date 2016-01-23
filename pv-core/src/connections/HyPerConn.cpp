@@ -3591,13 +3591,13 @@ void HyPerConn::allocateSparseWeights(PVLayerCube const * activity, const int ar
 
 int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arbor) {
    //Check if we need to update based on connection's channel
-   if(getChannel() == CHANNEL_NOUPDATE){
+   if(getChannel() == CHANNEL_NOUPDATE) {
       return PV_SUCCESS;
    }
    assert(post->getChannel(getChannel()));
 
    float dt_factor = getConvertToRateDeltaTimeFactor();
-   if (getPvpatchAccumulateType()==ACCUMULATE_STOCHASTIC) {
+   if (getPvpatchAccumulateType() == ACCUMULATE_STOCHASTIC) {
       dt_factor = getParent()->getDeltaTime();
    }
 
@@ -3606,14 +3606,6 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
 
    assert(arbor >= 0);
    const int numExtended = activity->numItems;
-
-#ifdef DEBUG_OUTPUT
-   int rank;
-   MPI_Comm_rank(parent->icCommunicator()->communicator(), &rank);
-   //printf("[%d]: HyPerLayr::recvSyn: neighbor=%d num=%d actv=%p this=%p conn=%p\n", rank, neighbor, numExtended, activity, this, conn);
-   printf("[%d]: HyPerLayr::recvSyn: neighbor=%d num=%d actv=%p this=%p conn=%p\n", rank, 0, numExtended, activity, this, conn);
-   fflush(stdout);
-#endif // DEBUG_OUTPUT
 
    int nbatch = parent->getNBatch();
 
@@ -3664,7 +3656,7 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
          const int nk = weights->nx * fPatchSize();
          const int ny = weights->ny;
 
-         if (weights->nx == nxp && weights->ny == nyp) {
+         if (weights->nx == nxp && weights->ny == nyp && false) {
             // Patch is not shrunken, use sparse weights
             int offset = patchStartIndex(patchToDataLUT(kPreExt));
             int *outIdx = &_sparsePost[offset];
@@ -3684,7 +3676,7 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
             for (int y = 0; y < ny; y++) {
                pvwdata_t *w = weight + y * syw;
                pvgsyndata_t *v = post + y * sy;
-               // TODO: this should be an inline function. Use a functor and templatize
+               // TODO: this should be an inline function. This is very bad for performance
                (accumulateFunctionPointer)(0, nk, v, a, w, NULL, sf);
             }
          }
@@ -4115,9 +4107,6 @@ void HyPerConn::deliverOnePostNeuronActivity(int arborID, int kTargetExt, int in
    }
 }
 
-#ifdef OBSOLETE
-// A vtable access in a tight loop? Nooope. That's bad. This function was inlined into deliverPresynapticPerspective.
-// Delete this code after April 2016
 void HyPerConn::deliverOnePreNeuronActivity(int kPreExt, int arbor, pvadata_t a, pvgsyndata_t * postBufferStart, void * auxPtr) {
    PVPatch * weights = getWeights(kPreExt, arbor);
    const int nk = weights->nx * fPatchSize();
@@ -4133,7 +4122,6 @@ void HyPerConn::deliverOnePreNeuronActivity(int kPreExt, int arbor, pvadata_t a,
       (accumulateFunctionPointer)(0, nk, postPatchStart + y*sy + offset, a, weightDataStart + y*syw + offset, auxPtr, sf);
    }
 }
-#endif
 
 int HyPerConn::createWeights(PVPatch *** patches, int nWeightPatches, int nDataPatches, int nxPatch,
       int nyPatch, int nfPatch, int arborId)
