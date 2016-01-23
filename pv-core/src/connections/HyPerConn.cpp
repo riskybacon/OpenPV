@@ -24,7 +24,8 @@
 #include "PlasticCloneConn.hpp"
 #include "../io/CoreParamGroupHandler.hpp"
 #include <limits>
-#include "../include/parallel.h"
+#include "../utils/pv_alloc.h"
+#include "../utils/pv_log.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -315,15 +316,17 @@ int HyPerConn::initialize_base()
    return PV_SUCCESS;
 }
 
+
 int HyPerConn::createArbors() {
    wPatches = (PVPatch***) calloc(numAxonalArborLists, sizeof(PVPatch**));
-   if( wPatches == NULL ) {
+   if (wPatches == NULL) {
       createArborsOutOfMemory();
       assert(false);
    }
+
    // GTK:  gSynPatchStart is offset from beginning of gSyn buffer for the corresponding channel
    gSynPatchStart = (size_t **) calloc( numAxonalArborLists, sizeof(size_t *) );
-   if( gSynPatchStart == NULL ) {
+   if (gSynPatchStart == NULL) {
       createArborsOutOfMemory();
       assert(false);
    }
@@ -414,7 +417,7 @@ int HyPerConn::constructWeights()
      wDataStart[0] = allocWeights(nPatches, nxp, nyp, nfp);
      assert(this->get_wDataStart(0) != NULL);
    //}
-   std::cout << "numAxonalArborLists for " << getName() << ": " << numAxonalArborLists << std::endl;
+   log_debug("numAxonalArborLists for %s: %d", getName(), numAxonalArborLists);
 
    for (int arborId=0;arborId<numAxonalArborLists;arborId++) {
       status = createWeights(wPatches, arborId);
@@ -1552,7 +1555,6 @@ int HyPerConn::allocatePostToPreBuffer(){
    const int numRestricted = postSynapticLayer()->getNumNeurons();
 
    postToPreActivity = (long*)malloc(sizeof(long) * numRestricted);
-   assert(postToPreActivity);
 
    //origpre many, origpost one
    if(sourceToTargetScaleX >= 1 && sourceToTargetScaleY >= 1){
@@ -1728,23 +1730,21 @@ int HyPerConn::allocateDataStructures() {
    if(!getUpdateGSynFromPostPerspective() && parent->getNumThreads() > 1){
       //thread_gSyn is only a buffer for one batch, as if we're not threading over batches, batches will be sequential
       thread_gSyn = (pvdata_t**) malloc(sizeof(pvdata_t*) * parent->getNumThreads());
-      assert(thread_gSyn);
 
       //Assign thread_gSyn to different points of tempMem
       for(int i = 0; i < parent->getNumThreads(); i++){
-         pvdata_t* thread_buffer = (pvdata_t*) malloc(sizeof(pvdata_t) * post->getNumNeurons());
-         if(!thread_buffer){
-            fprintf(stderr, "HyPerLayer \"%s\" error: rank %d unable to allocate %zu memory for thread_gSyn: %s\n", name, parent->columnId(), sizeof(pvdata_t) * post->getNumNeurons(), strerror(errno));
+         thread_gSyn[i] = (pvdata_t*) malloc(sizeof(pvdata_t) * post->getNumNeurons());
+         if (thread_gSyn == NULL) {
+            log_error("HyPerLayer \"%s\" error: rank %d unable to allocate memory for thread_gSyn", getName(), parent->columnId());
             exit(EXIT_FAILURE);
          }
-         thread_gSyn[i] = thread_buffer;
       }
    }
 
    //Allocate batchSkip buffer
    batchSkip = (bool*) malloc(parent->getNBatch() * sizeof(bool));
-   if(!batchSkip){
-      fprintf(stderr, "HyPerLayer \"%s\" error: rank %d unable to allocate %zu memory for batchSkip: %s\n", name, parent->columnId(), sizeof(bool) * parent->getNBatch(), strerror(errno));
+   if (batchSkip == NULL) {
+      log_error("HyPerLayer \"%s\" error: rank %d unable to allocate memory for batchSkip\n", getName(), parent->columnId());
       exit(EXIT_FAILURE);
    }
 
@@ -1877,8 +1877,8 @@ int HyPerConn::allocateDeviceBuffers()
          assert(b_conn);
          HyPerConn * group_conn = dynamic_cast<HyPerConn *>(b_conn);
          if(!group_conn){
-            std::cout << "FATAL ERROR: GPU group connection " << b_conn->getName() << " is not of type HyPerConn.\n";
-            exit(-1);
+            log_error("GPU group connection %s is not of type HyPerConn\n", b_conn->getName());
+            exit(EXIT_FAILURE);
          }
          //If this connection is NOT the "base" group conn that allocates
          //check dims and don't allocate
@@ -2274,7 +2274,7 @@ int HyPerConn::allocateReceivePostKernel()
    d_Patch2DataLookupTable->copyToDevice(postConn->getPatchToDataLUT());
 
    //In receive from post, we need to make sure x, y, and f local size is divisible by the actual number of post neurons
-   if(postLoc->nx % numXLocal != 0){
+   if(postLoc->nx % numXLocal != 0) {
       std::cout << "X local size of " << numXLocal << " is not divisible by post nx of " << postLoc->nx << "\n";
       exit(EXIT_FAILURE);
    }
@@ -2894,7 +2894,6 @@ int HyPerConn::insertProbe(BaseConnectionProbe * p)
    BaseConnectionProbe ** tmp;
    // malloc'ing a new buffer, copying data over, and freeing the old buffer could be replaced by malloc
    tmp = (BaseConnectionProbe **) malloc((numProbes + 1) * sizeof(BaseConnectionProbe *));
-   assert(tmp != NULL);
 
    for (int i = 0; i < numProbes; i++) {
       tmp[i] = probes[i];
@@ -3514,81 +3513,125 @@ int HyPerConn::deliver() {
 }
 
 void HyPerConn::allocateSparseWeights(PVLayerCube const * activity, const int arbor) {
-
-   pvwdata_t threshold = 0.000;
+   pvwdata_t threshold = 0.00;
    int numPatches = getNumDataPatches();
    size_t totalWeights = numWeights();
-   size_t numSparse = numSparseWeights(arbor, threshold);
-   numSparse = numWeights();
+   size_t numSparse = numSparseWeights(threshold);
+
+   log_debug("numSparse/totalWeights: %d/%d", numSparse, totalWeights);
+
+   size_t patchSize = nxp * nyp * nfp;
 
    // Dealloc existing sparse data structs.
    _sparseWeight.clear();
    _sparseWeightIndex.clear();
    _patchSparseWeightCount.clear();
    _patchSparseWeightIndex.clear();
+   _sparseWeightX.clear();
+   _sparseWeightY.clear();
+   _sparseWeightF.clear();
+   _sparsePost.clear();
 
    // Reserve memory for sparse data structs
-   _patchSparseWeightIndex.reserve(numPatches);
-   _patchSparseWeightCount.reserve(numPatches);
    _sparseWeight.reserve(numSparse);
    _sparseWeightIndex.reserve(numSparse);
+   _sparseWeightX.reserve(numSparse);
+   _sparseWeightY.reserve(numSparse);
+   _sparseWeightF.reserve(numSparse);
+   _sparsePost.reserve(numSparse);
 
-   // Loop over all independent patches, add the weights that
-   // are above the threshold
-   for (int patchIdx = 0; patchIdx < numPatches; patchIdx++) {
-      // Record the starting point for this patch in the sparse data table
-      _patchSparseWeightIndex.push_back(_sparseWeight.size());
+   _patchSparseWeightIndex.reserve(numPatches);
+   _patchSparseWeightCount.reserve(numPatches);
 
-      // Get the start of the weight data for this patch
-      pvwdata_t *weight = &wDataStart[arbor][patchIdx];
-
-      // Iterate over weights, add them to the sparse weight data list
-      // if they're below the threshold
-      int sparseWeightCount = 0;
-      for (int k = 0; k < nxp * nyp * nfp; k++) {
-         //         if (fabsf(weight[k]) > threshold) {
-            _sparseWeight.push_back(weight[k]);
-            _sparseWeightIndex.push_back(k);
-            sparseWeightCount++;
-         //         }
+#if 0
+   // Straight copy of patch data to sparse data structure, but no sparseness!
+   for (int ar = 0; ar < numAxonalArborLists; ar++) {
+      for (int pt = 0; pt < getNumDataPatches(); pt++) {
+         for (int idx = 0; idx < nxp * nyp * nfp; idx++) {
+            _sparseWeight.push_back(wDataStart[arbor][pt * patchSize + idx]);
+         }
       }
+   }
+   return;
+#endif
 
-      _patchSparseWeightCount.push_back(sparseWeightCount);
+   int sy = getPostNonextStrides()->sy;
+
+   for (int ar = 0; ar < numAxonalArborLists; ar++) {
+      // Loop over all independent data patches, add the weights that are above the threshold
+      for (int pt = 0; pt < numPatches; pt++) {
+         // Record the starting point for this patch in the sparse data table
+         _patchSparseWeightIndex.push_back(_sparseWeight.size());
+
+         // Get the start of the weight data for this patch
+         pvwdata_t *weight = &wDataStart[arbor][pt * patchSize];
+
+         // Iterate over weights, add them to the sparse weight data list
+         // if they're below the threshold
+         int sparseWeightCount = 0;
+         int pos = 0;
+
+         // Add above threshold weights to the sparse data structure
+         for (int y = 0; y < nyp; y++) {
+            int postIdx = y * sy;
+            for (int k = 0; k < nxp * nfp; k++, postIdx++, pos++) {
+               pvwdata_t w = weight[pos];
+               if (fabsf(w) >= threshold) {
+                  _sparseWeightIndex.push_back(pos);
+                  _sparseWeight.push_back(w);
+                  _sparsePost.push_back(postIdx);
+                  sparseWeightCount++;
+               }
+            }
+         }
+
+         _patchSparseWeightCount.push_back(sparseWeightCount);
+      }
    }
 
    float sparsePercentage = (1 - float(_sparseWeight.size()) / float(totalWeights)) * 100;
    float sparseSize = _sparseWeight.size() * sizeof(WeightListType::value_type) / 1024 / 1024;
 
-   // #ifdef DEBUG
-   std::cout << getName() << ":" << std::endl;
-   std::cout << " Num weight data patches: " << numPatches << std::endl;
-   std::cout << " Num weight patches:      " << getNumWeightPatches() << std::endl;
-   std::cout << " Num neurons:             " << activity->numItems << std::endl;
-   std::cout << " Weight sparse ratio:     "
-   << _sparseWeight.size() << "/" << totalWeights
-   << std::setprecision(4) << " (" << sparsePercentage << "%" << " " << sparseSize << " MB)" << std::endl;
-   // #endif
+   log_debug("%s:", getName());
+   log_debug(" Num weight data patches: %d", numPatches);
+   log_debug(" Num weight patches:      %d", getNumWeightPatches());
+   log_debug(" Num neurons:             %d", activity->numItems);
+   log_debug(" Weight sparse ratio:     %d/%d (%.2f\%    %d MB)", _sparseWeight.size(), totalWeights, sparsePercentage, sparseSize);
 }
 
 #if 1
 // Sparse weights implementation
 int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arbor) {
-   assert(arbor >= 0);
-   // Check if we need to update based on connection's channel
+   //   pv_assert(10 == 3, "Wtf? %d != %d", 10, 3);
+
+   //Check if we need to update based on connection's channel
    if(getChannel() == CHANNEL_NOUPDATE){
       return PV_SUCCESS;
    }
    assert(post->getChannel(getChannel()));
-
-   float dt_factor = getConvertToRateDeltaTimeFactor();
-   if (getPvpatchAccumulateType() == ACCUMULATE_STOCHASTIC) {
+   float dt_factor;
+   if (getPvpatchAccumulateType()==ACCUMULATE_STOCHASTIC) {
       dt_factor = getParent()->getDeltaTime();
+   }
+   else {
+      dt_factor = getConvertToRateDeltaTimeFactor();
    }
 
    const PVLayerLoc * preLoc = preSynapticLayer()->getLayerLoc();
    const PVLayerLoc * postLoc = postSynapticLayer()->getLayerLoc();
 
+
+   assert(arbor >= 0);
    const int numExtended = activity->numItems;
+
+#ifdef DEBUG_OUTPUT
+   int rank;
+   MPI_Comm_rank(parent->icCommunicator()->communicator(), &rank);
+   //printf("[%d]: HyPerLayr::recvSyn: neighbor=%d num=%d actv=%p this=%p conn=%p\n", rank, neighbor, numExtended, activity, this, conn);
+   printf("[%d]: HyPerLayr::recvSyn: neighbor=%d num=%d actv=%p this=%p conn=%p\n", rank, 0, numExtended, activity, this, conn);
+   fflush(stdout);
+#endif // DEBUG_OUTPUT
+
 
    int nbatch = parent->getNBatch();
 
@@ -3623,9 +3666,10 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
          int kPreExt = activity->isSparse ? activeIndicesBatch[neuron] : neuron;
 
          float a = activityBatch[kPreExt] * dt_factor;
+         if (a == 0.0f) continue;
 
          // If we're using thread_gSyn, set this here
-         pvdata_t *postBufferStart = gSynPatchHeadBatch;
+         pvdata_t * postBufferStart = gSynPatchHeadBatch;
 
 #ifdef PV_USE_OPENMP_THREADS
          if(thread_gSyn){
@@ -3634,15 +3678,54 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
          }
 #endif // PV_USE_OPENMP_THREADS
 
-         int dataPatchIndex = patchIndexToDataIndex(kPreExt);
-         int weightIndex = _patchSparseWeightIndex[dataPatchIndex];
-         int weightCount = _patchSparseWeightCount[dataPatchIndex];
-         auto weight = &_sparseWeight[weightIndex];
-         auto postPatchStart = postBufferStart + getGSynPatchStart(kPreExt, arbor);
+         PVPatch *weights = getWeights(kPreExt, arbor);
+         pvgsyndata_t * postPatchStart = postBufferStart + getGSynPatchStart(kPreExt, arbor);
+         const int sy  = getPostNonextStrides()->sy;       // stride in layer
 
-         for (int k = 0; k < weightCount; k++) {
-            auto originalK = _sparseWeightIndex[weightIndex + k];
-            postPatchStart[originalK] = a * weight[k];
+         const int nk = weights->nx * fPatchSize();
+         const int ny = weights->ny;
+         const int syw = yPatchStride();                   // stride in patch
+
+
+         if (weights->nx == nxp && weights->ny == nyp) {
+            // Patch is not shrunken, use sparse weights
+
+            // Offset into sparse data structures
+            int offset = patchStartIndex(patchToDataLUT(kPreExt));
+            pvwdata_t *weights = &_sparseWeight[offset];
+            int *outIdx = &_sparsePost[offset];
+
+            for (int k = 0; k < nk * ny; k++) {
+               postPatchStart[outIdx[k]] += a * weights[k];
+            }
+         } else {
+            // Shrunken patch, don't use sparse data
+#ifdef TEST_SPARSE_WEIGHTS_EXCEPT_THEYRE_NOT_ACTUALLY_SPARSE_BECAUSE_DUH_TESTING
+            // Test case for using the sparse data in the non-sparse handler.
+            // Use this if the threshold is zero and the sparse data isn't sparse
+            // at all. This verifies that the copy is happening correctly
+            int weightIdx = patchStartIndex(patchToDataLUT(kPreExt)) + wPatches[arbor][kPreExt]->offset;
+            pvwdata_t *weightDataStart = &_sparseWeight.at(weightIdx);
+
+            for (int y = 0; y < ny; y++) {
+               int postIdx = y * sy;
+               int weightIdx = y * syw;
+               for (int k = 0; k < nk; k++, postIdx++, weightIdx++) {
+                  postPatchStart[postIdx] += a * weightDataStart[weightIdx];
+               }
+            }
+#else
+            // George McFly says, "I am your density". Get a pointer to the dense weight data.
+            pvwdata_t *weightDataStart = get_wData(arbor,kPreExt);
+
+            int sf = 1;
+            for (int y = 0; y < ny; y++) {
+               pvwdata_t *w = weightDataStart + y * syw;
+               pvgsyndata_t *v = postPatchStart + y * sy;
+               (accumulateFunctionPointer)(0, nk, v, a, w, NULL, sf);
+            }
+            
+#endif
          }
       }
 
@@ -3660,7 +3743,7 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
          }
       }
 #endif
-
+      
    }
    return PV_SUCCESS;
 }
@@ -4503,12 +4586,10 @@ PVPatch *** HyPerConn::convertPreSynapticWeights(double time)
 
    if (wPostPatches == NULL) {
       wPostPatches = (PVPatch***) calloc(numAxonalArborLists, sizeof(PVPatch**));
-      assert(wPostPatches!=NULL);
       assert(wPostDataStart == NULL);
       //TODO-CER-2014.4.3 - is the sizeof part correct??????????????????
       //PFS-2014.6.4 - This looks correct; it's of the form "foo * x = (foo *) calloc(numfoos, sizeof(foo))"
       wPostDataStart = (pvwdata_t **) calloc(numAxonalArborLists, sizeof(pvwdata_t *));
-      assert(wPostDataStart!=NULL);
       wPostDataStart[0] = allocWeights(numPost, nxpPost, nypPost, nfpPost);
       assert(wPostDataStart[0] != NULL);
       for(int arborID=0;arborID<numberOfAxonalArborLists();arborID++) {
@@ -4617,10 +4698,8 @@ PVPatch **** HyPerConn::point2PreSynapticWeights()
 
       //Return data structure
       wPostPatchesp = (PVPatch****) calloc(numAxonalArborLists, sizeof(PVPatch***));
-      assert(wPostPatchesp!=NULL);
       assert(wPostDataStartp == NULL);
       wPostDataStartp = (pvwdata_t ***) calloc(numAxonalArborLists, sizeof(pvwdata_t **));
-      assert(wPostDataStartp!=NULL);
 
       for(int arborID=0;arborID<numberOfAxonalArborLists();arborID++) {
 
@@ -5035,7 +5114,7 @@ pvwdata_t * HyPerConn::allocWeights(int nPatches, int nxPatch, int nyPatch, int 
    size_t arborSize = dataSize * this->numberOfAxonalArborLists();
    if (arborSize / dataSize != this->numberOfAxonalArborLists()) { overflow = true; }
 
-   std::cout << "Size of weights for " << getName() << ": " << arborSize / 1024 / 1024 << " MB" << std::endl;
+   log_debug("Size of weights for %s: %d MB", getName(), arborSize / 1024 / 1024);
 
    if (overflow) {
       fprintf(stderr, "Connection \"%s\" is too big (%d patches of size nxPatch=%d by nyPatch=%d by nfPatch=%d; %d arbors, weight size=%zu bytes).  Exiting.\n",

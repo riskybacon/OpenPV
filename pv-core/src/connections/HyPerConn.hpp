@@ -35,6 +35,10 @@
 
 namespace PV {
 
+struct PVSparsePatch {
+   std::vector<int> start;
+   std::vector<int> size;
+};
 
 //class HyPerCol;
 //class HyPerLayer;
@@ -450,21 +454,16 @@ protected:
       return getNumDataPatches() * nxp * nyp * nfp;
    }
 
-   // Apply a function to all weights. The weights will be unchanged
-   template<class Function>
-   void forWeights(int arbor, Function &&f) {
-      pvwdata_t *start = get_wDataStart(arbor);
-      const pvwdata_t *end = &start[numWeights()];
-      std::for_each(start, end, f);
-   }
-
-   const size_t numSparseWeights(int arbor, pvwdata_t threshold) const {
-      const pvwdata_t *weights = get_wDataStartConst(arbor);
+   const size_t numSparseWeights(pvwdata_t threshold) const {
       size_t numSparse = 0;
 
-      for (int idx = 0; idx < numWeights(); idx++) {
-         if (fabsf(weights[idx]) > threshold) {
-            numSparse++;
+      for (int arbor = 0; arbor < numAxonalArborLists; arbor++) {
+         const pvwdata_t *weights = get_wDataStartConst(arbor);
+
+         for (int idx = 0; idx < numWeights(); idx++) {
+            if (fabsf(weights[idx]) >= threshold) {
+               numSparse++;
+            }
          }
       }
 
@@ -476,14 +475,24 @@ protected:
 
    // All weights that are above the threshold
    WeightListType _sparseWeight;
-   // The original position of this weight in the patch
+   // The index of weight in _sparseWeight in the non-sparse data patch
    std::vector<unsigned long> _sparseWeightIndex;
-   // Start of sparse weight data in the _sparseWeight array.
-   // The index is the data patch number.
+   // The x coord of a sparse weight in the patch
+   std::vector<int> _sparseWeightX;
+   // The y coord of a sparse weight in the patch
+   std::vector<int> _sparseWeightY;
+   // The f coord of a sparse weight in the patch
+   std::vector<int> _sparseWeightF;
+   // The output offset into the post layer for a weight
+   std::vector<int> _sparsePost;
+   // Start of sparse weight data in the _sparseWeight array, indexed by data patch
    std::vector<int> _patchSparseWeightIndex;
-   // Number of sparse weights for a patch
-   // The index is the data patch number
+   // Number of sparse weights for a patch, indexed by data patch
    std::vector<int> _patchSparseWeightCount;
+   // Maps patch geometry into the sparse data patches
+   std::vector< std::vector<PVSparsePatch> > _sparsePatch;
+
+   std::vector< std::vector< std::vector< std::vector<int> > > > _destIdx;
 
    unsigned long _numDeliverCalls; // Number of times deliver has been called
    unsigned long _allocateSparseWeightsFrequency; // Number of _numDeliverCalls that need to happen before the pre list needs to be rebuilt
