@@ -13,6 +13,7 @@ void vpv_log_with_prefix(FILE * restrict stream, const char *prefix, const char 
    char msg[buf_size];
    vsnprintf(msg, buf_size, fmt, args);
    fprintf(stream, "%s<%s:%d>: %s\n", prefix, basename((char*)file), line, msg);
+   fflush(stream);
 }
 
 void vpv_log_error(const char *file, int line, const char *fmt, va_list args) {

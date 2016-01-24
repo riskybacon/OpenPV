@@ -20,6 +20,7 @@
 #include "../utils/Timer.hpp"
 #include <stdlib.h>
 #include <vector>
+#include "../utils/pv_log.h"
 
 #ifdef PV_USE_OPENCL
 #include "../arch/opencl/CLKernel.hpp"
@@ -358,6 +359,18 @@ private:
 
    bool needPost;
 
+   // All weights that are above the threshold
+   typedef std::vector<pvwdata_t> WeightListType;
+   WeightListType _sparseWeight;
+   // The output offset into the post layer for a weight
+   std::vector<int> _sparsePost;
+   // Start of sparse weight data in the _sparseWeight array, indexed by data patch
+   std::vector<int> _patchSparseWeightIndex;
+   // Number of sparse weights for a patch, indexed by data patch
+   std::vector<int> _patchSparseWeightCount;
+
+   unsigned long _numDeliverCalls; // Number of times deliver has been called
+   unsigned long _allocateSparseWeightsFrequency; // Number of _numDeliverCalls that need to happen before the pre list needs to be rebuilt
 
 protected:
    HyPerConn* postConn;
@@ -448,34 +461,33 @@ protected:
       return getNumDataPatches() * nxp * nyp * nfp;
    }
 
-   const size_t numSparseWeights(pvwdata_t threshold) const {
+   size_t numSparseWeights(pvwdata_t threshold) const {
       size_t numSparse = 0;
+      size_t patchSize = nxp * nyp * nfp;
 
-      for (int arbor = 0; arbor < numAxonalArborLists; arbor++) {
-         const pvwdata_t *weights = get_wDataStartConst(arbor);
-
-         for (int idx = 0; idx < numWeights(); idx++) {
-            if (fabsf(weights[idx]) >= threshold) {
-               numSparse++;
+      fprintf(stderr, "blahblah\n");
+      for (int ar = 0; ar < numAxonalArborLists; ar++) {
+         // Loop over all independent data patches, add the weights that are above the threshold
+         for (int pt = 0; pt < getNumDataPatches(); pt++) {
+            // Get the start of the weight data for this patch
+            pvwdata_t *weight = &wDataStart[ar][pt * patchSize];
+            if (weight != NULL) {
+               // Add above threshold weights to the sparse data structure
+               for (int k = 0; k < nyp * nxp * nfp; k++) {
+                  fprintf(stderr, "k: %d\n", k);
+                  fprintf(stderr, "ptr: %p\n", weight);
+                  //               log_debug("k: %d", k);
+                  pvwdata_t w = weight[k];
+                  if (fabsf(w) >= threshold) {
+                     numSparse++;
+                  }
+               }
             }
          }
       }
-
       return numSparse;
    }
-
-   // All weights that are above the threshold
-   typedef std::vector<pvwdata_t> WeightListType;
-   WeightListType _sparseWeight;
-   // The output offset into the post layer for a weight
-   std::vector<int> _sparsePost;
-   // Start of sparse weight data in the _sparseWeight array, indexed by data patch
-   std::vector<int> _patchSparseWeightIndex;
-   // Number of sparse weights for a patch, indexed by data patch
-   std::vector<int> _patchSparseWeightCount;
-
-   unsigned long _numDeliverCalls; // Number of times deliver has been called
-   unsigned long _allocateSparseWeightsFrequency; // Number of _numDeliverCalls that need to happen before the pre list needs to be rebuilt
+   
 
 protected:
    HyPerConn();
@@ -895,7 +907,8 @@ protected:
 
    void connOutOfMemory(const char* funcname);
 
-   void allocateSparseWeights(PVLayerCube const * const activity, const int arbor);
+   //   void allocateSparseWeights(PVLayerCube const * const activity, const int arbor);
+   void allocateSparseWeights();
 
    virtual int deliverPresynapticPerspective(PVLayerCube const * activity, int arborID);
    virtual int deliverPostsynapticPerspective(PVLayerCube const * activity, int arborID);
