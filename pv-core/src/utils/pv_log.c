@@ -8,7 +8,7 @@
 extern "C" {
 #endif // __cplusplus
 
-void vpv_log_with_prefix(FILE * restrict stream, const char *prefix, const char *file, int line, const char *fmt, va_list args) {
+void vpv_log_with_prefix(FILE *stream, const char *prefix, const char *file, int line, const char *fmt, va_list args) {
    static int buf_size = 1024;
    char msg[buf_size];
    vsnprintf(msg, buf_size, fmt, args);

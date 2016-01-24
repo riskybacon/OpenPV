@@ -465,7 +465,6 @@ protected:
       size_t numSparse = 0;
       size_t patchSize = nxp * nyp * nfp;
 
-      fprintf(stderr, "blahblah\n");
       for (int ar = 0; ar < numAxonalArborLists; ar++) {
          // Loop over all independent data patches, add the weights that are above the threshold
          for (int pt = 0; pt < getNumDataPatches(); pt++) {
@@ -474,9 +473,6 @@ protected:
             if (weight != NULL) {
                // Add above threshold weights to the sparse data structure
                for (int k = 0; k < nyp * nxp * nfp; k++) {
-                  fprintf(stderr, "k: %d\n", k);
-                  fprintf(stderr, "ptr: %p\n", weight);
-                  //               log_debug("k: %d", k);
                   pvwdata_t w = weight[k];
                   if (fabsf(w) >= threshold) {
                      numSparse++;
