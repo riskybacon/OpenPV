@@ -3613,7 +3613,6 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
          activeIndicesBatch = activity->activeIndices + b * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
       }
 
-
 #ifdef PV_USE_OPENMP_THREADS
       // Clear all thread gsyn buffer
       if (thread_gSyn) {
