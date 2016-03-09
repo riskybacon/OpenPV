@@ -27,7 +27,7 @@ int pvpatch_accumulate(int kPreExt, int nk, float* RESTRICT v, float a, pvwdata_
    int k;
    int err = 0;
    float accumval = 0;
-   for (k = 0; k < nk; k+=sf) {
+   for (k = 0; k < nk; k++) {
       accumval = a*w[k];
       v[k] += accumval;
       //      printf("%p,%p,%f,%f,%f,%f\n", v + k, w + k,accumval,v[k],a,w[k]);
@@ -58,7 +58,7 @@ int pvpatch_accumulate_from_post(int kPreExt, int nk, float * RESTRICT v, float 
    int status = 0;
    int k;
    //float dv = 0.0f;
-   for (k = 0; k < nk; k+=sf) {
+   for (k = 0; k < nk; k++) {
       *v += dt_factor*a[k]*w[k];
       //dv = dv + a[k]*w[k];
    }

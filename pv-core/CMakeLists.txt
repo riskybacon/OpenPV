@@ -7,50 +7,57 @@ set(PV_VERSION_MINOR 1)
 set(PV_VERSION_PATCH 0)
 set(PV_VERSION_TWEAK 0)
 
-#Set CMAKE_MODULE_PATH
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/docs/cmake/Modules/")
+# Nicer for in-source builds. Puts the library into a subdir
+set(LIBRARY_OUTPUT_PATH ${PV_LIBRARY_DIR})
 
-if (NOT CMAKE_BUILD_TYPE)        #To use a different CMAKE_BUILD_TYPE, use the option -DCMAKE_BUILD_TYPE=xxxx on the command line
-   set(CMAKE_BUILD_TYPE Release) #Can be: None, Debug, Release, RelWithDebInfo, MinSizeRel
-endif (NOT CMAKE_BUILD_TYPE)
+set(PV_IO_DIR "${PV_LIBRARY_DIR}/io")
+set(PV_PARSER_DIR "${PV_IO_DIR}/parser-generated")
+set(PV_PARAM_LEXER_C "${PV_PARSER_DIR}/param_lexer.c")
+set(PV_PARAM_PARSER_CPP "${PV_PARSER_DIR}/param_parser.cpp")
+set(PV_PARAM_PARSER_HPP "${PV_PARSER_DIR}/param_parser.hpp")
 
-set(CMAKE_C_FLAGS_DEBUG "-g3 -O0")
-set(CMAKE_CXX_FLAGS_DEBUG "-g3 -O0")
-set(CMAKE_C_FLAGS_RELEASE "-g0 -O3")
-set(CMAKE_CXX_FLAGS_RELEASE "-g0 -O3")
+set(PV_LIBRARY_NAME "pv")
 
-# File which denotes compile-ready folders
-set(PV_SRC_LIST PV_FOLDER_LIST.txt)
-
-set(PV_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
-set(PV_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/lib")
-
-######################################################################################
-######################################################################################
-##
-## MAIN CODE
-##
-######################################################################################
-######################################################################################
-
-set(LIBRARY_OUTPUT_PATH ${PV_BINARY_DIR})
-set(EXECUTABLE_OUTPUT_PATH ${PV_BINARY_DIR})
+# Create directory structure for lexer and parser output
+file(MAKE_DIRECTORY ${PV_IO_DIR})
+execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory ${PV_IO_DIR})
+file(MAKE_DIRECTORY ${PV_PARSER_DIR})
+execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory ${PV_PARSER_DIR})
 
 # Lex/Yacc for parser
 if (NOT BISON_PARSER_DEFINED)
-    MESSAGE("-- Searching for bison ..................")
-    find_package(BISON REQUIRED)
-    BISON_TARGET(PARSER ${PV_SOURCE_DIR}/io/parser/params.y ${PV_SOURCE_DIR}/io/parser-generated/param_parser.cpp COMPILE_FLAGS "-y")
-
+  find_package(BISON REQUIRED)
+  BISON_TARGET(PARSER ${PV_SOURCE_DIR}/io/parser/params.y ${PV_PARAM_PARSER_CPP} DEFINES_FILE ${PV_PARAM_PARSER_HPP} COMPILE_FLAGS "-y")
 endif (NOT BISON_PARSER_DEFINED)
+
 if (NOT FLEX_SCANNER_DEFINED)
-    MESSAGE("-- Searching for flex (yacc) ............")
-    find_package(FLEX REQUIRED)
-    FLEX_TARGET(SCANNER ${PV_SOURCE_DIR}/io/parser/params.l ${PV_SOURCE_DIR}/io/parser-generated/param_lexer.c)
-    ADD_FLEX_BISON_DEPENDENCY(SCANNER PARSER)
+  find_package(FLEX REQUIRED)
+  FLEX_TARGET(SCANNER ${PV_SOURCE_DIR}/io/parser/params.l ${PV_PARAM_LEXER_C})
+  ADD_FLEX_BISON_DEPENDENCY(SCANNER PARSER)
 endif (NOT FLEX_SCANNER_DEFINED)
 
+# Library source subdirectories
+set(SRC_SUBDIRS
+  src/arch/cuda
+  src/arch/mpi
+  src/bindings
+  src/columns
+  src/connections
+  src/cudakernels
+  src/include
+  src/io
+  src/kernels
+  src/layers
+  src/normalizers
+  src/utils
+  src/weightinit
+)
 
+foreach(SUBDIR ${SRC_SUBDIRS})
+  include("${SUBDIR}/CMakeLists.txt")
+endforeach()
+
+<<<<<<< HEAD
 # Read in file and parse by line
 file(READ "${PV_SRC_LIST}" contents)
 STRING(REGEX REPLACE "\n" ";" contents "${contents}")
@@ -147,113 +154,66 @@ endif (DEFINED PV_SVN_REVISION AND DEFINED PV_GIT_REVISION)
 if (NOT (DEFINED PV_SVN_REVISION OR DEFINED PV_GIT_REVISION))
    set(PV_REVISION "unknown version")
 endif (NOT (DEFINED PV_SVN_REVISION OR DEFINED PV_GIT_REVISION))
+=======
+set(PVLibSrc ${PVLibSrcCpp} ${PVLibSrcHpp} ${PVLibSrcC} ${PVLibSrcH})
+
+include(PVGitRevision)
+>>>>>>> master
 
 # Header file to pass CMake settings to source code
+if(PV_USE_OPENMP)
+  # C++ code needs PV_USE_OPENMP_THREADS defined
+  set(PV_USE_OPENMP_THREADS ON)
+endif()
+
+file(MAKE_DIRECTORY ${PV_CONFIG_FILE_DIR})
+execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory ${PV_CONFIG_FILE_DIR})
 configure_file (
    "cMakeHeader.template"
-   "${PV_SOURCE_DIR}/include/cMakeHeader.h"
+   "${PV_CONFIG_FILE_DIR}/cMakeHeader.h"
 )
 
-# START DELETE ME
-if(FALSE)
-# Handled in top level CMakeLists.txt
-# Add external libraries 
-if (NOT GDAL_FOUND)
-    MESSAGE("-- Searching for GDAL library ...........")
-    find_package(GDAL REQUIRED)
-endif (NOT GDAL_FOUND)
-include_directories(${GDAL_INCLUDE_DIR})
-endif(FALSE)
-# END DELETE ME
+if (PV_BUILD_SHARED) 
+  message(STATUS "Building shared library")
+  if (APPLE)
+    # Like LD_LIBRARY_PATH, but for OS X
+    set(CMAKE_MACOSX_RPATH ${PV_LIBRARY_DIR})
+  endif()
+  set(SHARED_FLAG "SHARED")
+else()
+  message(STATUS "Building static library")
+  set(SHARED_FLAG "STATIC")
+endif()
 
-# 
-# The user may specify a non-standard compiler name for MPI
-#  For example, the user may type:
-#    cmake CMakeLists.txt -DCMAKE_C_COMPILER=openmpicc -DCMAKE_CXX_COMPILER=openmpic++
-#
+include_directories(${PV_CONFIG_FILE_DIR})
+include_directories(${PV_INCLUDE_DIR})
 
-# START MAYBE DELETE / MOVE TO TOPLEVEL
-if (PV_USE_MPI)
-    if (NOT DEFINED MPI_C_COMPILER OR NOT DEFINED MPI_CXX_COMPILER)
-        MESSAGE("-- Searching for MPI library ............")
-        find_package(MPI REQUIRED)
-    endif (NOT DEFINED MPI_C_COMPILER OR NOT DEFINED MPI_CXX_COMPILER)
+if (PV_USE_GDAL AND GDAL_FOUND)
+  include_directories(${GDAL_INCLUDE_DIR})
+endif()
 
-    # Can this be moved to the top level CMakeListst.txt? If so,
-    # then this entire if block can be removed
-    set(CMAKE_C_COMPILER "${MPI_C_COMPILER}")
-    set(CMAKE_CXX_COMPILER "${MPI_CXX_COMPILER}")
-endif (PV_USE_MPI)
-# END MAYBE DELETE
+if (PV_USE_CUDA AND CUDNN_FOUND)
+  include_directories(${CUDA_TOOLKIT_INCLUDE})
+  include_directories(${CUDNN_INCLUDE_DIR})
+endif()
 
-# START MAYBE MOVE TO TOPLEVEL
-# Could this find package be moved to the top level so that 
-# this does not need to be repeated for parallel directories
-# that need CUDA?
-if (PV_USE_CUDA)
-    MESSAGE("-- Searching for CUDA library ............")
-    find_package(CUDA)
-endif (PV_USE_CUDA)
+if (PV_USE_MPI AND MPI_FOUND)
+  include_directories(${MPI_CXX_INCLUDE_PATH})
+endif()
 
-#IF(CMAKE_BUILD_TYPE MATCHES DEBUG)
-#   set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -g3; -G3; -O0)
-#ELSE(CMAKE_BUILD_TYPE MATCHES RELEASE)
-#   set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -g0; -G0; -O3)
-#endif(CMAKE_BUILD_TYPE)
+if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "MinRelSize")
+  list(APPEND CMAKE_CXX_FLAGS ${PV_COMPILE_FLAGS_RELEASE})
+else()
+  list(APPEND CMAKE_CXX_FLAGS ${PV_COMPILE_FLAGS_DEBUG})
+endif()
 
-if(PV_USE_CUDA)
-   set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -arch=sm_30; )
-else(PV_USE_CUDA)
-   set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -arch=sm_20;)
-endif(PV_USE_CUDA)
-# END MAYBE MOVE TO TOPLEVEL
-
-# START MAYBE MOVE TO TOPLEVEL
-if(CUDA_RELEASE)
-   set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -O;)
-else(CUDA_RELEASE)
-   set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -Xptxas; -v; -keep; -lineinfo; -g; -G;)
-endif(CUDA_RELEASE)
-#cuda_compile(CUDA_O ${PVLibSrcCu}) 
-# END MAYBE MOVE TO TOPLEVEL
-
-# Add PetaVision
-if(PV_USE_CUDA)
-   if(PV_BUILD_SHARED)
-      cuda_add_library(pv SHARED ${PVLibSrc} ${BISON_PARSER_OUTPUTS} ${FLEX_SCANNER_OUTPUTS} ${PVLibSrcCu})
-   else(PV_BUILD_SHARED)
-      cuda_add_library(pv STATIC ${PVLibSrc} ${BISON_PARSER_OUTPUTS} ${FLEX_SCANNER_OUTPUTS} ${PVLibSrcCu})
-   endif(PV_BUILD_SHARED)
-else(PV_USE_CUDA)
-   if(PV_BUILD_SHARED)
-      add_library(pv SHARED ${PVLibSrc} ${BISON_PARSER_OUTPUTS} ${FLEX_SCANNER_OUTPUTS})
-   else(PV_BUILD_SHARED)
-      add_library(pv STATIC ${PVLibSrc} ${BISON_PARSER_OUTPUTS} ${FLEX_SCANNER_OUTPUTS})
-   endif(PV_BUILD_SHARED)
-endif(PV_USE_CUDA)
-
-# Link executable to external libraries
-target_link_libraries(pv ${GDAL_LIBRARY})
-
-# START MAYBE DELETE
-# Could this be moved to the top level so that parallel directories
-# that need cudnn don't have to repeat this 
-IF(PV_USE_CUDA)
-   IF(APPLE)
-      set(CUDNN_LIB_NAME "libcudnn.dylib")
-   ELSE(APPLE)
-      set(CUDNN_LIB_NAME "libcudnn.so")
-   ENDIF(APPLE)
-
-   set(CUDNN_LIBRARY_SEARCH_PATH 
-      ${CUDNN_PATH}
-      ${CUDNN_PATH}/lib
-      ${CUDNN_PATH}/lib64
-   )
-
-   find_library(CUDNN_LIBRARY ${CUDNN_LIB_NAME} ${CUDNN_LIBRARY_SEARCH_PATH})
-
-   target_link_libraries(pv ${CUDNN_LIBRARY})
-ENDIF(PV_USE_CUDA)
-# END MAYBE DELETE
+if(PV_USE_CUDA AND CUDA_FOUND AND CUDNN_FOUND)
+  list(APPEND CMAKE_CXX_FLAGS ${PV_NVCC_FLAGS})
+  STRING(REGEX REPLACE ";" " " CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  cuda_add_library(${PV_LIBRARY_NAME} ${SHARED_FLAG} ${PVLibSrc} ${BISON_PARSER_OUTPUTS} ${FLEX_SCANNER_OUTPUTS} ${PVLibSrcCu})
+else()
+  # Add  PetaVision library target, no CUDA
+  STRING(REGEX REPLACE ";" " " CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  add_library(${PV_LIBRARY_NAME} ${SHARED_FLAG} ${PVLibSrc} ${BISON_PARSER_OUTPUTS} ${FLEX_SCANNER_OUTPUTS})
+endif()
 

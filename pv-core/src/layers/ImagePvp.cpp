@@ -47,12 +47,16 @@ int ImagePvp::initialize(const char * name, HyPerCol * hc) {
    int params[numParams];
    pvp_read_header(pvstream, getParent()->icCommunicator(), params, &numParams);
    PV::PV_fclose(pvstream); pvstream = NULL;
+   if (numParams != NUM_BIN_PARAMS || params[INDEX_HEADER_SIZE] != NUM_BIN_PARAMS*sizeof(int) || params[INDEX_NUM_PARAMS] != NUM_BIN_PARAMS) {
+      std::cout << "ImagePvp:: inputPath \"" << inputPath << "\" is not a .pvp file.\n";
+      exit(EXIT_FAILURE);
+   }
    fileNumFrames = params[INDEX_NBANDS]; 
    //fileNumBatches = params[INDEX_NBATCH];
    
    if(pvpFrameIdx < 0 || pvpFrameIdx >= fileNumFrames){
       std::cout << "ImagePvp:: pvpFrameIndex of " << pvpFrameIdx << " out of bounds, file contains " << fileNumFrames << " frames\n";
-      exit(-1);
+      exit(EXIT_FAILURE);
    }
 
    return status;
@@ -353,7 +357,7 @@ int ImagePvp::scatterImageFilePVP(const char * filename, int xOffset, int yOffse
 
       pvpFileTime = timed;
       //This is being printed twice: track down
-      std::cout << "Rank " << rank << " Reading pvpFileTime " << pvpFileTime << " at timestep " << parent->simulationTime() << " with offset (" << xOffset << "," << yOffset << ")\n";
+      //std::cout << "Rank " << rank << " Reading pvpFileTime " << pvpFileTime << " at timestep " << parent->simulationTime() << " with offset (" << xOffset << "," << yOffset << ")\n";
 
       scatterActivity(pvstream, comm, rootproc, buf, loc, false, &fileloc, xOffset, yOffset, params[INDEX_FILE_TYPE], length);
       // buf is a nonextended layer.  Image layers copy the extended buffer data into buf by calling Image::copyToInteriorBuffer

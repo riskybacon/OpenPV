@@ -277,6 +277,7 @@ int HyPerConn::initialize_base()
    this->numKernelActivations = NULL;
    this->keepKernelsSynchronized_flag = false;
 
+   this->normalizeDwFlag = true;
    this->useMask = false;
    this->maskLayerName = NULL;
    this->maskFeatureIdx = -1;
@@ -362,7 +363,7 @@ int HyPerConn::createArbors() {
       assert(false);
    }
 
-   if(sharedWeights){
+   if(sharedWeights && normalizeDwFlag){
       numKernelActivations = (long **) calloc(numAxonalArborLists, sizeof(long * ));
       if( numKernelActivations == NULL ) {
          createArborsOutOfMemory();
@@ -657,7 +658,7 @@ int HyPerConn::initPlasticityPatches()
       assert(get_dwDataStart(arborId) != NULL);
    } // loop over arbors
 
-   if(sharedWeights){
+   if(sharedWeights && normalizeDwFlag){
       numKernelActivations[0] = (long*) calloc(nxp*nyp*nfp*nPatches, sizeof(long));
       assert(numKernelActivations[0] != NULL);
       for (int arborId = 0; arborId < numAxons; arborId++) {
@@ -715,6 +716,7 @@ int HyPerConn::ioParamsFillGroup(enum ParamsIOFlag ioFlag)
    ioParam_dWMax(ioFlag);
    ioParam_keepKernelsSynchronized(ioFlag);
 
+   ioParam_normalizeDw(ioFlag);
    ioParam_useMask(ioFlag);
    ioParam_maskLayerName(ioFlag);
    ioParam_maskFeatureIdx(ioFlag);
@@ -1223,6 +1225,13 @@ void HyPerConn::ioParam_keepKernelsSynchronized(enum ParamsIOFlag ioFlag) {
    assert(!parent->parameters()->presentAndNotBeenRead(name, "plasticityFlag"));
    if (sharedWeights && plasticityFlag) {
       parent->ioParamValue(ioFlag, name, "keepKernelsSynchronized", &keepKernelsSynchronized_flag, true/*default*/, true/*warnIfAbsent*/);
+   }
+}
+
+void HyPerConn::ioParam_normalizeDw(enum ParamsIOFlag ioFlag) {
+   assert(!parent->parameters()->presentAndNotBeenRead(name, "plasticityFlag"));
+   if(plasticityFlag){
+      this->getParent()->ioParamValue(ioFlag, this->getName(), "normalizeDw", &normalizeDwFlag, true, false/*warnIfAbsent*/);
    }
 }
 
@@ -1739,9 +1748,14 @@ int HyPerConn::allocateDataStructures() {
 
    //Allocate batchSkip buffer
    batchSkip = (bool*) malloc(parent->getNBatch() * sizeof(bool));
+   
    if(!batchSkip){
       fprintf(stderr, "HyPerLayer \"%s\" error: rank %d unable to allocate %zu memory for batchSkip: %s\n", name, parent->columnId(), sizeof(bool) * parent->getNBatch(), strerror(errno));
       exit(EXIT_FAILURE);
+   }
+
+   for(int i = 0; i < parent->getNBatch(); i++){
+      batchSkip[i] = false;
    }
 
    return status;
@@ -3107,8 +3121,10 @@ int HyPerConn::reduce_dW(int arborId){
    int kernel_status = PV_BREAK;
    if(sharedWeights){
       kernel_status = reduceKernels(arborId); // combine partial changes in each column
-      int activation_status = reduceActivations(arborId);
-      assert(kernel_status == activation_status);
+      if(normalizeDwFlag){
+         int activation_status = reduceActivations(arborId);
+         assert(kernel_status == activation_status);
+      }
    }
    return kernel_status;
 }
@@ -3177,10 +3193,12 @@ int HyPerConn::calc_dW() {
       if (status==PV_BREAK) { break; }
       assert(status == PV_SUCCESS);
    }
-   for(int arborId=0;arborId<numberOfAxonalArborLists();arborId++) {
-      status = normalize_dW(arborId);
-      if (status==PV_BREAK) { break; }
-      assert(status == PV_SUCCESS);
+   if(normalizeDwFlag){
+      for(int arborId=0;arborId<numberOfAxonalArborLists();arborId++) {
+         status = normalize_dW(arborId);
+         if (status==PV_BREAK) { break; }
+         assert(status == PV_SUCCESS);
+      }
    }
    return status;
 }
@@ -3321,7 +3339,7 @@ int HyPerConn::updateInd_dW(int arbor_ID, int batch_ID, int kExt){
    int kernelIndex = patchIndexToDataIndex(kExt);
    pvwdata_t * dwdata = get_dwData(arbor_ID, kExt);
    long * activations = NULL;
-   if(sharedWeights){
+   if(sharedWeights && normalizeDwFlag){
       activations = get_activations(arbor_ID, kExt);
    }
 
@@ -3374,6 +3392,10 @@ void HyPerConn::addClone(PlasticCloneConn* conn){
 }
 
 int HyPerConn::normalize_dW(int arbor_ID){
+   //This is here in case other classes overwrite the outer class calling this function
+   if(!normalizeDwFlag){
+      return PV_SUCCESS;
+   }
    if (sharedWeights) {
       assert(numKernelActivations);
       int numKernelIndices = getNumDataPatches();

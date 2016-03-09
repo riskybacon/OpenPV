@@ -1,5 +1,4 @@
 import numpy as np
-
 headerPattern = [('headersize', np.int32),
                  ('numparams', np.int32),
                  ('filetype', np.int32),
@@ -40,4 +39,5 @@ def readpvpheader(fileStream):
 
     if stringFlag:
         fileStream.close()
+
     return dict(zip(header.dtype.names,header[0]))

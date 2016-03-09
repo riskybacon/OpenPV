@@ -6,9 +6,9 @@ enable_testing()
 # See http://www.cmake.org/Wiki/CMake_Useful_Variables for more variables to set
 cmake_minimum_required(VERSION 2.8.10)
 
-# Include the AddPVTest macro
-include(AddPVTest)
-include(PVSystemsTest)
+# Include the pv_add_test macro
+include(PVAddTest)
+include(PVAddExecutable)
 
 set(PV_SYSTEM_TEST_THREADS "" CACHE STRING "Defines the number of threads to use for system tests (empty string for max)")
 
@@ -76,6 +76,7 @@ add_subdirectory(ReadArborFileTest)
 add_subdirectory(ReceiveFromPostTest)
 add_subdirectory(RescaleLayerTest)
 add_subdirectory(ResetStateOnTriggerTest)
+add_subdirectory(SegmentTest)
 add_subdirectory(ShrunkenPatchTest)
 add_subdirectory(ShrunkenPatchFlagTest)
 add_subdirectory(StochasticReleaseTest)
