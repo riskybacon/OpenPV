@@ -1,0 +1,138 @@
+Using default value of NULL for string parameter "dtAdaptController" in group "column"
+Maximum number of OpenMP threads is 8
+Number of MPI processes is 1.
+Number of threads used is 1
+Using default value 0.000000 for parameter "useAdaptMethodExp1stOrder" in group "column"
+Using default value 1.000000 for parameter "verifyWrites" in group "column"
+Using default value 1.000000 for parameter "nbatch" in group "column"
+Using default value 0.000000 for parameter "suppressLastOutput" in group "column"
+Auto assigning GPUs
+Rank 0 on host "cabra.local" (1 GPU[s]) using GPU index 0
+
+Number of Cuda devices found: 1
+
+device: 0
+CUDA Device # 0 == GeForce GT 750M
+with 2 units/cores at 925.500000 MHz
+	Maximum threads group size == 1024
+	Maximum grid sizes == ( 2147483647 65535 65535 )
+	Maximum threads sizes == ( 1024 1024 64 )
+	Local mem size == 49152
+	Global mem size == 2147024896
+	Const mem size == 65536
+	Registers per block == 65536
+	Warp size == 32
+
+Using default value 0.000000 for parameter "initialWriteTime" in group "residual"
+Using default value 0.000000 for parameter "updateGpu" in group "residual"
+Using default value 0.000000 for parameter "clearGSynInterval" in group "residual"
+Using default value 0.000000 for parameter "updateGpu" in group "V1"
+Using default value 0.000000 for parameter "clearGSynInterval" in group "V1"
+selfInteract = 1
+HyPerConn "V1_to_residual" warning: preActivityIsNotRate has been replaced with convertRateToSpikeCount.
+TransposeConn "residual_to_V1" warning: preActivityIsNotRate has been replaced with convertRateToSpikeCount.
+CloneConn "V1_to_reconstruction" warning: preActivityIsNotRate has been replaced with convertRateToSpikeCount.
+Warning: CloneConn "V1_to_reconstruction" does not use parameter writeStep, but it is present in the parameters file.
+Parameter group "column": parameter "checkpointWriteStepInterval" has not been read.
+Parameter group "column": parameter "deleteOlderCheckpoints" has not been read.
+Parameter group "column": string parameter "checkpointWriteDir" has not been read.
+Parameter group "column": string parameter "checkpointWriteTriggerMode" has not been read.
+Parameter group "residual": parameter "AMax" has not been read.
+Parameter group "residual": parameter "AMin" has not been read.
+Parameter group "residual": parameter "AShift" has not been read.
+Parameter group "residual": parameter "VWidth" has not been read.
+Parameter group "V1": parameter "timeConstantTauMinimum" has not been read.
+Parameter group "V1": parameter "numWindowX" has not been read.
+Parameter group "V1": parameter "numWindowY" has not been read.
+Parameter group "V1": parameter "slopeErrorStd" has not been read.
+Parameter group "V1": parameter "dVThresh" has not been read.
+Parameter group "input": parameter "MinV" has not been read.
+Parameter group "input": parameter "MaxV" has not been read.
+Parameter group "V1_to_residual": parameter "combine_dW_with_W_flag" has not been read.
+Parameter group "V1_to_residual": parameter "symmetrizeWeights" has not been read.
+Parameter group "V1_to_residual": parameter "dWMax" has not been read.
+Parameter group "V1_to_residual": parameter "keepKernelsSynchronized" has not been read.
+Parameter group "correct": parameter "MinV" has not been read.
+Parameter group "correct": parameter "MaxV" has not been read.
+Using default value 0.000000 for parameter "updateGpu" in group "reconstruction"
+Using default value 0.000000 for parameter "clearGSynInterval" in group "reconstruction"
+Using default value 0.000000 for parameter "minV" in group "input"
+Using default value 1.000000 for parameter "maxV" in group "input"
+Using default value 0.000000 for parameter "updateGpu" in group "input"
+Using default value 0.000000 for parameter "clearGSynInterval" in group "input"
+Using default value 0.000000 for parameter "convertRateToSpikeCount" in group "V1_to_residual"
+Using default value 0.000000 for parameter "receiveGpu" in group "V1_to_residual"
+Using default value 0.000000 for parameter "initialWriteTime" in group "V1_to_residual"
+Using default value 0.000000 for parameter "writeCompressedWeights" in group "V1_to_residual"
+HyPerConn "V1_to_residual": nfp will be set in the communicateInitInfo() stage.
+Adding connection "V1_to_residual" to normalizer group "V1_to_residual".
+Using default value 1.000000 for parameter "normalizeOnInitialize" in group "V1_to_residual"
+Using default value 1.000000 for parameter "normalizeOnWeightUpdate" in group "V1_to_residual"
+Using default value 0.000000 for parameter "nonnegativeConstraintFlag" in group "V1_to_residual"
+Using default value 0.000000 for parameter "convertRateToSpikeCount" in group "residual_to_V1"
+Using default value 0.000000 for parameter "receiveGpu" in group "residual_to_V1"
+Using default value 0.000000 for parameter "convertRateToSpikeCount" in group "V1_to_reconstruction"
+Using default value 0.000000 for parameter "receiveGpu" in group "V1_to_reconstruction"
+Using default value 0.000000 for parameter "minV" in group "correct"
+Using default value 1.000000 for parameter "maxV" in group "correct"
+Using default value 0.000000 for parameter "updateGpu" in group "correct"
+Using default value 0.000000 for parameter "clearGSynInterval" in group "correct"
+Using default value 0.000000 for parameter "updateGpu" in group "comparison"
+Using default value 0.000000 for parameter "clearGSynInterval" in group "comparison"
+Using default value 1.000000 for parameter "textOutputFlag" in group "comparison_test"
+Layer "residual" communicateInitInfo completed.
+Layer "V1" communicateInitInfo completed.
+Layer "reconstruction" communicateInitInfo completed.
+Layer "input" communicateInitInfo completed.
+Layer "correct" communicateInitInfo completed.
+Layer "comparison" communicateInitInfo completed.
+Connection "input_to_residual" setting nfp to number of postsynaptic features = 512.
+Connection "input_to_residual" communicateInitInfo completed.
+Connection "V1_to_residual" setting nfp to number of postsynaptic features = 512.
+Layer "V1": adjusting x-margin width from 0 to 4
+Layer "V1": adjusting y-margin width from 0 to 4
+Connection "V1_to_residual" communicateInitInfo completed.
+Layer "residual": adjusting x-margin width from 0 to 8
+Layer "residual": adjusting y-margin width from 0 to 8
+Connection "residual_to_V1" communicateInitInfo completed.
+Connection "V1_to_reconstruction" communicateInitInfo completed.
+Connection "reconstruction_to_comparison" setting nfp to number of postsynaptic features = 512.
+Connection "reconstruction_to_comparison" communicateInitInfo completed.
+Connection "correct_to_comparison" setting nfp to number of postsynaptic features = 512.
+Connection "correct_to_comparison" communicateInitInfo completed.
+Probe "comparison_test" communicateInitInfo completed.
+selfInteract = 1
+Layer "residual" allocateDataStructures completed.
+Layer "V1" allocateDataStructures completed.
+Layer "reconstruction" allocateDataStructures completed.
+Layer "input" allocateDataStructures completed.
+Layer "correct" allocateDataStructures completed.
+Warning: Checkpoint directory "output//Last" has existing timeinfo.bin, which is now being deleted.
+Layer "comparison" allocateDataStructures completed.
+Connection "input_to_residual" allocateDataStructures completed.
+Connection "V1_to_residual" allocateDataStructures completed.
+Connection residual_to_V1 setting V1_to_residual as postConn
+Connection "residual_to_V1" allocateDataStructures completed.
+Connection "V1_to_reconstruction" allocateDataStructures completed.
+Connection "reconstruction_to_comparison" allocateDataStructures completed.
+Connection "correct_to_comparison" allocateDataStructures completed.
+Probe "comparison_test" allocateDataStructures completed.
+Layer "residual" setInitialValues completed.
+Layer "V1" setInitialValues completed.
+Layer "reconstruction" setInitialValues completed.
+Layer "input" setInitialValues completed.
+Layer "correct" setInitialValues completed.
+Layer "comparison" setInitialValues completed.
+Connection "input_to_residual" setInitialValues completed.
+Connection "V1_to_residual" setInitialValues completed.
+Connection "residual_to_V1" setInitialValues completed.
+Connection "V1_to_reconstruction" setInitialValues completed.
+Connection "reconstruction_to_comparison" setInitialValues completed.
+Connection "correct_to_comparison" setInitialValues completed.
+Checkpointing to directory "output//Last" at simTime = 1.000000
+selfInteract = 1
+checkpointWrite complete. simTime = 1.000000
+     339.29 seconds elapsed (clock())
+     331.35 seconds elapsed (CPU)
+     169.99 seconds elapsed (wallclock)
+ANNLayer "comparison" had at least one nonzero activity value, beginning at time 1.000000
