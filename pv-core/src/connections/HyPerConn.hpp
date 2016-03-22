@@ -916,7 +916,7 @@ protected:
    void connOutOfMemory(const char* funcname);
 
    //   void allocateSparseWeights(PVLayerCube const * const activity, const int arbor);
-   void allocateSparseWeights();
+   void allocateSparseWeights(const char *logPrefix);
 
    virtual int deliverPresynapticPerspective(PVLayerCube const * activity, int arborID);
    virtual int deliverPostsynapticPerspective(PVLayerCube const * activity, int arborID);

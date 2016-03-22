@@ -16,6 +16,7 @@
 #include <float.h>
 #include <limits.h>
 #include <iostream>
+#include <algorithm>
 #include "../layers/accumulate_functions.h"
 #include "../weightinit/InitWeights.hpp"
 #include "../normalizers/NormalizeBase.hpp"
@@ -3525,15 +3526,53 @@ int HyPerConn::deliver() {
    return PV_SUCCESS;
 }
 
-void HyPerConn::allocateSparseWeights() {
-   const pvwdata_t threshold = 0.00000001;
+struct SparseWeightsInfo {
+   unsigned long size;
+   pvwdata_t thresholdWeight;
+   float percentile;
+};
+
+SparseWeightsInfo findPercentileThreshold(float percentile, pvwdata_t **wDataStart, size_t numAxonalArborLists, size_t numPatches, size_t patchSize) {
+   assert(percentile >= 0.0f);
+   assert(percentile <= 1.0f);
+   
+   size_t fullWeightSize = numAxonalArborLists * numPatches * patchSize;
+   SparseWeightsInfo info;
+   info.percentile = percentile;
+
+   if (percentile >= 1.0) {
+      info.size = fullWeightSize;
+      info.thresholdWeight = 0.0;
+      return info;
+   }
+
+   std::vector<pvwdata_t> weights;
+   weights.reserve(fullWeightSize);
+   
+   for (int ar = 0; ar < numAxonalArborLists; ar++) {
+      for (int pt = 0; pt < numPatches; pt++) {
+         pvwdata_t *weight = &wDataStart[ar][pt * patchSize];
+	 for (int k = 0; k < patchSize; k++) {
+	    weights.push_back(fabs(weight[k]));
+	 }
+      }
+   }
+
+   std::sort(weights.begin(), weights.end());
+   int index = weights.size() * info.percentile;
+
+   info.thresholdWeight = weights[index];
+   info.size = weights.size() - index;
+   return info;
+}
+
+void HyPerConn::allocateSparseWeights(const char *logPrefix) {
    int numPatches = getNumDataPatches();
    size_t totalWeights = numWeights();
-   size_t numSparse = numSparseWeights(threshold);
-
-   //   log_debug("numSparse/totalWeights: %d/%d", numSparse, totalWeights);
-
    size_t patchSize = nxp * nyp * nfp;
+   SparseWeightsInfo info = findPercentileThreshold(0.98, wDataStart, numAxonalArborLists, numPatches, patchSize);
+   size_t numSparse = info.size;
+   pvwdata_t threshold = info.thresholdWeight;
 
    // Dealloc existing sparse data structs.
    _sparseWeight.clear();
@@ -3590,7 +3629,7 @@ void HyPerConn::allocateSparseWeights() {
                   _sparseWeight.push_back(w);
                   _sparsePost.push_back(postIdx);
                   sparseWeightCount++;
-					}
+	       }
             }
          }
 
@@ -3604,10 +3643,11 @@ void HyPerConn::allocateSparseWeights() {
    float sparsePercentage = (1.0f - float(_sparseWeight.size()) / float(totalWeights)) * 100.0f;
 	float sparseSize = float(_sparseWeight.size() * sizeof(WeightListType::value_type)) / 1024.0 / 1024.0;
 
-   log_debug("%s:", getName());
+   log_debug("%s:%s", getName(), logPrefix);
    log_debug(" Num weight data patches: %d", numPatches);
    log_debug(" Num weight patches:      %d", getNumWeightPatches());
    log_debug(" Weight sparse ratio:     %d/%d (%.2f%%    %f MB)", _sparseWeight.size(), totalWeights, sparsePercentage, sparseSize);
+   log_debug(" expected / actual:       %d/%d", info.size, _sparseWeight.size());
 #endif
 }
 
@@ -3621,7 +3661,7 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
    assert(post->getChannel(getChannel()));
 
    if (!_sparseWeightsAllocated) {
-      allocateSparseWeights();
+      allocateSparseWeights("deliverPresynapticPerspective");
    }
 
    float dt_factor = getConvertToRateDeltaTimeFactor();
@@ -3851,6 +3891,11 @@ int HyPerConn::deliverPostsynapticPerspective(PVLayerCube const * activity, int 
    assert(post->getChannel(getChannel()));
 
    assert(arborID >= 0);
+
+   if (!_sparseWeightsAllocated) {
+      allocateSparseWeights("deliverPostsynapticPerspective");
+   }
+
    //Get number of neurons restricted target
    const int numPostRestricted = post->getNumNeurons();
 
