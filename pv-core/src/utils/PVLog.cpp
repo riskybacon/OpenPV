@@ -15,6 +15,7 @@ void vpv_log_with_prefix(FILE *stream, const char *prefix, const char *file, int
 }
 
 void vpv_log_error(const char *file, int line, const char *fmt, va_list args) {
+   fflush(stdout);
    vpv_log_with_prefix(stderr, "ERROR", file, line, fmt, args);
 }
 
