@@ -6,7 +6,8 @@
  */
 
 #include "IdentConn.hpp"
-#include "../weightinit/InitIdentWeights.hpp"
+#include "weightinit/InitIdentWeights.hpp"
+#include "utils/PVLog.hpp"
 
 namespace PV {
 
@@ -31,6 +32,12 @@ int IdentConn::initialize(const char * name, HyPerCol * hc) {
 
 int IdentConn::ioParamsFillGroup(enum ParamsIOFlag ioFlag) {
    int status = HyPerConn::ioParamsFillGroup(ioFlag);
+
+   // April 15, 2016: Scale moved from IdentConn to RescaleConn.
+   if (!strcmp(getKeyword(), "IdentConn") && parent->parameters()->present(name, "scale")) {
+      logError("IdentConn \"%s\" error: IdentConn does not take a scale parameter.  Use RescaleConn instead.\n", name);
+   }
+
    return status;
 }
 

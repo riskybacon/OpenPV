@@ -160,7 +160,7 @@ int buildandrun1paramset(PV_Init* initObj,
          fprintf(stderr, "HyPerCol::run() returned with error code %d\n", status);
       }
    }
-   if( status==PV_SUCCESS && customexit != NULL ) {
+   if( status==PV_SUCCESS && customexit != NULL && !initObj->getArguments()->getDryRunFlag()) {
       status = (*customexit)(hc, argc, argv);
       if( status != PV_SUCCESS) {
          fprintf(stderr, "customexit function failed with return value %d\n", status);
@@ -268,7 +268,7 @@ int buildandrun1paramset(PV_Init * initObj,
          fprintf(stderr, "HyPerCol::run() returned with error code %d\n", status);
       }
    }
-   if( status==PV_SUCCESS && customexit != NULL ) {
+   if( status==PV_SUCCESS && customexit != NULL && !initObj->getArguments()->getDryRunFlag() ) {
       status = (*customexit)(hc, argc, argv);
       if( status != PV_SUCCESS) {
          fprintf(stderr, "customexit function failed with return value %d\n", status);
@@ -281,7 +281,9 @@ int buildandrun1paramset(PV_Init * initObj,
    return status;
 }
 
+// Deprecated April 14, 2016.
 int outputParams(int argc, char * argv[], char const * path, ParamGroupHandler ** groupHandlerList, int numGroupHandlers) {
+   printf("\nWarning: outputParams is deprecated.  Instead use the -n option on the command line or the dryRunFlag in PV_Arguments.\n\n");
    PV::PV_Init * initObj = new PV::PV_Init(&argc, &argv, false/*allowUnrecognizedArguments*/);
    initObj->initialize();
    if (initObj->isExtraProc()) { return EXIT_SUCCESS; }
