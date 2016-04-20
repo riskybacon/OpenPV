@@ -31,6 +31,14 @@
 #include "utils/PVAlloc.hpp"
 #include "utils/PVAssert.hpp"
 
+#include "components/DeliverPush.h"
+#include "components/DeliverPull.h"
+#include "components/DeliverPushCuda.h"
+#include "components/DeliverPullCuda.h"
+#include "components/Accumulate.h"
+
+#include <thread>
+
 namespace PV {
 
 HyPerConn::HyPerConn()
@@ -91,15 +99,6 @@ HyPerConn::~HyPerConn()
    }
 
    free(normalizeGroupName);
-
-   if(thread_gSyn){
-      for(int i = 0; i < parent->getNumThreads(); i++){
-         free(thread_gSyn[i]);
-         thread_gSyn[i] = NULL;
-      }
-      free(thread_gSyn);
-      thread_gSyn = NULL;
-   }
 
    if(needPost && postConn){
       delete postConn;
@@ -175,7 +174,6 @@ int HyPerConn::initialize_base()
    strengthParamHasBeenWritten = false;
 
    updateGSynFromPostPerspective = false;
-   thread_gSyn = NULL;
 
    pvpatchAccumulateTypeString = NULL;
    pvpatchAccumulateType = ACCUMULATE_CONVOLVE;
@@ -411,6 +409,7 @@ int HyPerConn::initialize(const char * name, HyPerCol * hc, InitWeights * weight
    pvAssert(!inputParams->presentAndNotBeenRead(name, "pvpatchAccumulateType"));
    switch (pvpatchAccumulateType) {
    case ACCUMULATE_CONVOLVE:
+
       accumulateFunctionPointer  = &pvpatch_accumulate;
       accumulateFunctionFromPostPointer = &pvpatch_accumulate_from_post;
       break;
@@ -1532,16 +1531,9 @@ int HyPerConn::allocateDataStructures() {
    }
 #endif
 
-   //Allocate temp buffers if needed, 1 for each thread
-   //Only allocate for recv from pre, and not threading over batches
-   if(!getUpdateGSynFromPostPerspective() && parent->getNumThreads() > 1) {
-      //thread_gSyn is only a buffer for one batch, as if we're not threading over batches, batches will be sequential
-      thread_gSyn = (pvdata_t**) pvMalloc(sizeof(pvdata_t*) * parent->getNumThreads());
-
-      //Assign thread_gSyn to different points of tempMem
-      for(int i = 0; i < parent->getNumThreads(); i++){
-         thread_gSyn[i] = (pvdata_t*) pvMallocError(sizeof(pvdata_t) * post->getNumNeurons(), "HyPerLayer \"%s\" error: rank %d unable to allocate %zu memory for thread_gSyn", name, parent->columnId(), sizeof(pvdata_t) * post->getNumNeurons());
-      }
+   // Allocate temporary gSyn buffers for each thread
+   if(!getUpdateGSynFromPostPerspective()) {
+      allocateThreadGSyn(parent->getNumThreads(), post->getNumNeurons());
    }
 
    //Allocate batchSkip buffer
@@ -2903,239 +2895,159 @@ int HyPerConn::deliver() {
    return PV_SUCCESS;
 }
 
-int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arborID) {
-   //Check if we need to update based on connection's channel
-   if(getChannel() == CHANNEL_NOUPDATE){
+#if 1
+int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arbor) {
+   // Check if we need to update based on connection's channel
+   if (getChannel() == CHANNEL_NOUPDATE) {
       return PV_SUCCESS;
    }
+
    pvAssert(post->getChannel(getChannel()));
+   pvAssert(arbor >= 0);
 
-   float dt_factor;
-   if (getPvpatchAccumulateType()==ACCUMULATE_STOCHASTIC) {
-      dt_factor = getParent()->getDeltaTime();
-   }
-   else {
-      dt_factor = getConvertToRateDeltaTimeFactor();
+   if (mDeliver == 0) {
+      mDeliver = new DeliverPush<AccumulatePre<float> >(this, preSynapticLayer(), postSynapticLayer(), parent->getNumThreads(), parent->getNBatch());
    }
 
-   if (_weightSparsity > 0.0f && !_sparseWeightsAllocated[arborID]) {
-      allocateSparseWeightsPre(activity, arborID);
-   }
+   (*mDeliver)(activity, arbor);
 
-   const PVLayerLoc * preLoc = preSynapticLayer()->getLayerLoc();
-   const PVLayerLoc * postLoc = postSynapticLayer()->getLayerLoc();
+   return PV_SUCCESS;
+}
+#else
+   int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arborID) {
+      //Check if we need to update based on connection's channel
+      if(getChannel() == CHANNEL_NOUPDATE){
+         return PV_SUCCESS;
+      }
+      pvAssert(post->getChannel(getChannel()));
 
-
-   pvAssert(arborID >= 0);
-   const int numExtended = activity->numItems;
-
-   int nbatch = parent->getNBatch();
-
-   for(int b = 0; b < nbatch; b++){
-      pvdata_t * activityBatch = activity->data + b * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
-      pvdata_t * gSynPatchHeadBatch = post->getChannel(getChannel()) + b * postLoc->nx * postLoc->ny * postLoc->nf;
-      unsigned int * activeIndicesBatch = NULL;
-      if(activity->isSparse){
-         activeIndicesBatch = activity->activeIndices + b * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
+      float dt_factor;
+      if (getPvpatchAccumulateType()==ACCUMULATE_STOCHASTIC) {
+         dt_factor = getParent()->getDeltaTime();
+      }
+      else {
+         dt_factor = getConvertToRateDeltaTimeFactor();
       }
 
-      int numLoop;
-      if(activity->isSparse){
-         numLoop = activity->numActive[b];
+      if (_weightSparsity > 0.0f && !_sparseWeightsAllocated[arborID]) {
+         allocateSparseWeightsPre(activity, arborID);
       }
-      else{
-         numLoop = numExtended;
-      }
+
+      const PVLayerLoc * preLoc = preSynapticLayer()->getLayerLoc();
+      const PVLayerLoc * postLoc = postSynapticLayer()->getLayerLoc();
+
+
+      pvAssert(arborID >= 0);
+      const int numExtended = activity->numItems;
+
+      int nbatch = parent->getNBatch();
+
+      for(int b = 0; b < nbatch; b++){
+         pvdata_t * activityBatch = activity->data + b * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
+         pvdata_t * gSynPatchHeadBatch = post->getChannel(getChannel()) + b * postLoc->nx * postLoc->ny * postLoc->nf;
+         unsigned int * activeIndicesBatch = NULL;
+         if(activity->isSparse){
+            activeIndicesBatch = activity->activeIndices + b * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
+         }
+
+         int numLoop;
+         if(activity->isSparse){
+            numLoop = activity->numActive[b];
+         }
+         else{
+            numLoop = numExtended;
+         }
 
 #ifdef PV_USE_OPENMP_THREADS
-      //Clear all thread gsyn buffer
-      if(thread_gSyn){
-         int numNeurons = post->getNumNeurons();
+         //Clear all thread gsyn buffer
+            int numNeurons = post->getNumNeurons();
 #ifdef PV_USE_OPENMP_THREADS
 #pragma omp parallel for
 #endif
-         for(int i = 0; i < parent->getNumThreads() * numNeurons; i++){
-            int ti = i/numNeurons;
-            int ni = i % numNeurons;
-            thread_gSyn[ti][ni] = 0;
-         }
-      }
+            for(int i = 0; i < parent->getNumThreads() * numNeurons; i++){
+               int ti = i/numNeurons;
+               int ni = i % numNeurons;
+               _threadGSyn[ti][ni] = 0;
+            }
 #endif // PV_USE_OPENMP_THREADS
 
 #ifdef PV_USE_OPENMP_THREADS
 #pragma omp parallel for schedule(static)
 #endif
-      for (int loopIndex = 0; loopIndex < numLoop; loopIndex++) {
-         int kPreExt;
-         if(activity->isSparse){
-            kPreExt = activeIndicesBatch[loopIndex];
-         }
-         else{
-            kPreExt = loopIndex;
-         }
+         for (int loopIndex = 0; loopIndex < numLoop; loopIndex++) {
+            int kPreExt;
+            if(activity->isSparse){
+               kPreExt = activeIndicesBatch[loopIndex];
+            }
+            else{
+               kPreExt = loopIndex;
+            }
 
-         float a = activityBatch[kPreExt] * dt_factor;
-         if (a == 0.0f) continue;
+            float a = activityBatch[kPreExt] * dt_factor;
+            if (a == 0.0f) continue;
 
-         //If we're using thread_gSyn, set this here
-         pvdata_t * gSynPatchHead;
+            //If we're using _threadGSyn, set this here
+            pvdata_t * gSynPatchHead;
 #ifdef PV_USE_OPENMP_THREADS
-         if(thread_gSyn){
-            int ti = omp_get_thread_num();
-            gSynPatchHead = thread_gSyn[ti];
-         }
-         else{
-            gSynPatchHead = gSynPatchHeadBatch;
-         }
+            if(_threadGSyn.size() > 0){
+               int ti = omp_get_thread_num();
+               gSynPatchHead = _threadGSyn[ti].data();
+            }
+            else{
+               gSynPatchHead = gSynPatchHeadBatch;
+            }
 #else // PV_USE_OPENMP_THREADS
-       gSynPatchHead = gSynPatchHeadBatch;
+            gSynPatchHead = gSynPatchHeadBatch;
 #endif // PV_USE_OPENMP_THREADS
-         if (_weightSparsity <= 0.0f) {
-            deliverOnePreNeuronActivity(kPreExt, arborID, a, gSynPatchHead, getRandState(kPreExt));
-         } else {
-            deliverOnePreNeuronActivitySparseWeights(kPreExt, arborID, a, gSynPatchHead, getRandState(kPreExt));
-         }
-      }
-#ifdef PV_USE_OPENMP_THREADS
-      //Accumulate back into gSyn // Should this be done in HyPerLayer where it can be done once, as opposed to once per connection?
-      if(thread_gSyn){
-         pvdata_t * gSynPatchHead = gSynPatchHeadBatch;
-         int numNeurons = post->getNumNeurons();
-         //Looping over neurons first to be thread safe
-#pragma omp parallel for
-         for(int ni = 0; ni < numNeurons; ni++){
-            for(int ti = 0; ti < parent->getNumThreads(); ti++){
-               gSynPatchHead[ni] += thread_gSyn[ti][ni];
+            if (_weightSparsity <= 0.0f) {
+               deliverOnePreNeuronActivity(kPreExt, arborID, a, gSynPatchHead, getRandState(kPreExt));
+            } else {
+               deliverOnePreNeuronActivitySparseWeights(kPreExt, arborID, a, gSynPatchHead, getRandState(kPreExt));
             }
          }
-      }
+#ifdef PV_USE_OPENMP_THREADS
+         //Accumulate back into gSyn // Should this be done in HyPerLayer where it can be done once, as opposed to once per connection?
+         if(_threadGSyn.size() > 0) {
+            pvdata_t * gSynPatchHead = gSynPatchHeadBatch;
+            int numNeurons = post->getNumNeurons();
+            //Looping over neurons first to be thread safe
+#pragma omp parallel for
+            for(int ni = 0; ni < numNeurons; ni++){
+               for(int ti = 0; ti < parent->getNumThreads(); ti++){
+                  gSynPatchHead[ni] += _threadGSyn[ti][ni];
+               }
+            }
+         }
 #endif
-   }
-   return PV_SUCCESS;
-}
-
-
-int HyPerConn::deliverPostsynapticPerspective(PVLayerCube const * activity, int arborID, int* numActive, int** activeList) {
-   //Make sure numActive and activeList are either both null or both valid pointers
-   if(numActive){
-      assert(activeList);
-   }
-   else{
-      assert(!activeList);
-   }
-
-   //Check channel number for noupdate
-   if(getChannel() == CHANNEL_NOUPDATE){
+      }
       return PV_SUCCESS;
    }
-   pvAssert(post->getChannel(getChannel()));
-
-   pvAssert(arborID >= 0);
-   //Get number of neurons restricted target
-   const int numPostRestricted = post->getNumNeurons();
-
-   float dt_factor;
-   if (getPvpatchAccumulateType()==ACCUMULATE_STOCHASTIC) {
-      dt_factor = getParent()->getDeltaTime();
-   }
-   else {
-      dt_factor = getConvertToRateDeltaTimeFactor();
-   }
-
-   if (_weightSparsity > 0.0f && !_sparseWeightsAllocated[arborID]) {
-      allocateSparseWeightsPost(activity, arborID);
-   }
-
-   const PVLayerLoc * sourceLoc = preSynapticLayer()->getLayerLoc();
-   const PVLayerLoc * targetLoc = post->getLayerLoc();
-
-   const int sourceNx = sourceLoc->nx;
-   const int sourceNy = sourceLoc->ny;
-   const int sourceNf = sourceLoc->nf;
-   const int targetNx = targetLoc->nx;
-   const int targetNy = targetLoc->ny;
-   const int targetNf = targetLoc->nf;
-   const int nbatch = targetLoc->nbatch;
-
-   const PVHalo * sourceHalo = &sourceLoc->halo;
-   const PVHalo * targetHalo = &targetLoc->halo;
-
-   //get source layer's extended y stride
-   int sy  = (sourceNx+sourceHalo->lt+sourceHalo->rt)*sourceNf;
-
-   //The start of the gsyn buffer
-   pvdata_t * gSynPatchHead = post->getChannel(getChannel());
-
-   long * startSourceExtBuf = getPostToPreActivity();
-   if(!startSourceExtBuf){
-      std::cout << "HyPerLayer::recvFromPost error getting preToPostActivity from connection. Is shrink_patches on?\n";
-      exit(EXIT_FAILURE);
-   }
-
-   //If numActive is a valid pointer, we're recv from post sparse
-   bool recvPostSparse = numActive;
-
-   for(int b = 0; b < nbatch; b++){
-      int numLoop;
-      if(recvPostSparse){
-         numLoop = numActive[b];
-      }
-      else{
-         numLoop = numPostRestricted;
-      }
-#ifdef PV_USE_OPENMP_THREADS
-#pragma omp parallel for schedule(static)
 #endif
-      for (int iLoop = 0; iLoop < numLoop; iLoop++){
-         int kTargetRes;
-         if(recvPostSparse){
-            kTargetRes = activeList[b][iLoop];
-         }
-         else{
-            kTargetRes = iLoop;
-         }
-         
 
-         pvdata_t * activityBatch = activity->data + b * (sourceNx + sourceHalo->rt + sourceHalo->lt) * (sourceNy + sourceHalo->up + sourceHalo->dn) * sourceNf;
-         pvdata_t * gSynPatchHeadBatch = gSynPatchHead + b * targetNx * targetNy * targetNf;
-         //Change restricted to extended post neuron
-         int kTargetExt = kIndexExtended(kTargetRes, targetNx, targetNy, targetNf, targetHalo->lt, targetHalo->rt, targetHalo->dn, targetHalo->up);
+int HyPerConn::deliverPostsynapticPerspective(PVLayerCube const * activity, int arbor, int* numActive, int** activeList) {
+   pvAssert(post->getChannel(getChannel()));
+   pvAssert(arbor >= 0);
 
-         //Read from buffer
-         long startSourceExt = startSourceExtBuf[kTargetRes];
-
-         //Calculate target's start of gsyn
-         pvdata_t * gSynPatchPos = gSynPatchHeadBatch + kTargetRes;
-
-         taus_uint4 * rngPtr = getRandState(kTargetRes);
-         float* activityStartBuf = &(activityBatch[startSourceExt]); 
-
-         if (_weightSparsity <= 0.0f) {
-            deliverOnePostNeuronActivity(arborID, kTargetExt, sy, activityStartBuf, gSynPatchPos, dt_factor, rngPtr);
-         } else {
-            deliverOnePostNeuronActivitySparseWeights(arborID, kTargetExt, sy, activityStartBuf, gSynPatchPos, dt_factor, rngPtr);
-         }
-      }
+   if (mDeliver == 0) {
+      mDeliver = new DeliverPull<AccumulatePost<float> >(this, preSynapticLayer(), postSynapticLayer(), parent->getNumThreads(), parent->getNBatch());
    }
+
+   (*mDeliver)(activity, arbor, numActive, activeList);
+
    return PV_SUCCESS;
 }
 
-
-
-#if defined(PV_USE_CUDA)
+#ifdef PV_USE_CUDA
 void HyPerConn::updateDeviceWeights(){
    //wDataStart is one big buffer, so this should grab everything
    float * h_weights = get_wDataStart(0);
-#ifdef PV_USE_CUDA
    PVCuda::CudaBuffer * d_weights = getDeviceWData();
-#endif
    pvAssert(d_weights);
    d_weights->copyToDevice(h_weights);
 
    //Need barrier here?
    parent->getDevice()->syncDevice();
 
-#if defined(PV_USE_CUDNN)
    //Set local sizes here
    const PVLayerLoc * preLoc = pre->getLayerLoc();
    const PVLayerLoc * postLoc = post->getLayerLoc();
@@ -3146,123 +3058,161 @@ void HyPerConn::updateDeviceWeights(){
 
    pvAssert(cudnn_WData);
    cudnn_WData->permuteWeightsPVToCudnn(d_weights->getPointer(), numberOfAxonalArborLists(), getNumDataPatches(), nxp, nyp, nfp);
-#endif
 }
 
-int HyPerConn::deliverPresynapticPerspectiveGPU(PVLayerCube const * activity, int arborID) {
+
+#if 0
+int HyPerConn::deliverPresynapticPerspectiveGPU(PVLayerCube const * activity, int arbor) {
    pvAssert(krRecvPre);
-   //Check if we need to update based on connection's channel
+   // Check if we need to update based on connection's channel
    if(getChannel() == CHANNEL_NOUPDATE){
       return PV_SUCCESS;
    }
    pvAssert(post->getChannel(getChannel())); // pvAssert(GSyn && GSyn[conn->getChannel()]);
 
-   float dt_factor;
-   if (getPvpatchAccumulateType()==ACCUMULATE_STOCHASTIC) {
-      dt_factor = getParent()->getDeltaTime();
-   }
-   else if (getPvpatchAccumulateType()==ACCUMULATE_CONVOLVE) {
-      dt_factor = getConvertToRateDeltaTimeFactor();
-   }
-   else{
-      std::cout << "Pooling accumulate not implemented for GPUs";
-      exit(-1);
+   if (mDeliver == 0) {
+      mDeliver = new DeliverPushCuda<AccumulatePost<float> >(this, preSynapticLayer(), postSynapticLayer(), parent->getNumThreads(), parent->getNBatch());
    }
 
-#ifdef PV_USE_CUDA
-   krRecvPre->set_dt_factor(dt_factor);
-#endif // PV_USE_CUDA
+   (*mDeliver)(activity, arbor);
 
-   //Post layer receives synaptic input
-   //Only with respect to post layer
-   const PVLayerLoc * preLoc = preSynapticLayer()->getLayerLoc();
-   const PVLayerLoc * postLoc = postSynapticLayer()->getLayerLoc();
-   //If the connection uses gpu to receive, update all buffers
-
-   //TODO see if you can avoid this step of transferring patches to gpu
-   //Based on arborId
-   //Other way would be to just allocate all arbors to gpu
-
-   //If more than 1 arbor, need to update patches and GSynPatchStart.
-   //If one arbor, done in allocatePreKernel in HyPerConn
-   if(numberOfAxonalArborLists() > 1){
-      PVPatch* h_patches = weights(arborID)[0]; //0 because it's one block of memory
-#ifdef PV_USE_CUDA
-      PVCuda::CudaBuffer * d_patches = getDevicePatches();
-#endif
-      pvAssert(d_patches);
-
-      d_patches->copyToDevice(h_patches);
-
-      size_t* h_GSynPatchStart = getGSynPatchStart()[arborID];
-#ifdef PV_USE_CUDA
-      PVCuda::CudaBuffer * d_GSynPatchStart = getDeviceGSynPatchStart();
-#endif
-      pvAssert(d_GSynPatchStart);
-      d_GSynPatchStart->copyToDevice(h_GSynPatchStart);
-   }
-
-   //Update pre datastore, post gsyn, and conn weights
-   //Only if their updated
-   if(preSynapticLayer()->getUpdatedDeviceDatastoreFlag()){
-      float * h_preDatastore= activity->data;
-#ifdef PV_USE_CUDA
-      PVCuda::CudaBuffer * d_preDatastore = preSynapticLayer()->getDeviceDatastore();
-#endif
-      pvAssert(d_preDatastore);
-      d_preDatastore->copyToDevice(h_preDatastore);
-
-      //Copy active indices and num active if needed
-      if(activity->isSparse){
-#ifdef PV_USE_CUDA
-         PVCuda::CudaBuffer * d_ActiveIndices;
-         PVCuda::CudaBuffer * d_numActive;
-#endif
-         d_ActiveIndices = preSynapticLayer()->getDeviceActiveIndices();
-         d_numActive = preSynapticLayer()->getDeviceNumActive();
-         pvAssert(d_ActiveIndices);
-         unsigned int * h_ActiveIndices = activity->activeIndices;
-         long * h_numActive = activity->numActive;
-         pvAssert(h_ActiveIndices);
-         d_numActive->copyToDevice(h_numActive);
-         d_ActiveIndices->copyToDevice(h_ActiveIndices);
+   return PV_SUCCESS;
+}
+#else
+   int HyPerConn::deliverPresynapticPerspectiveGPU(PVLayerCube const * activity, int arborID) {
+      pvAssert(krRecvPre);
+      //Check if we need to update based on connection's channel
+      if(getChannel() == CHANNEL_NOUPDATE){
+         return PV_SUCCESS;
       }
-      //Device now has updated
-      preSynapticLayer()->setUpdatedDeviceDatastoreFlag(false);
-   }
+      pvAssert(post->getChannel(getChannel())); // pvAssert(GSyn && GSyn[conn->getChannel()]);
 
-   //X direction is active neuron
-   //Y direction is post patch size
-   long totActiveNeuron[parent->getNBatch()];
-   long maxTotalActiveNeuron = 0;
-   for(int b = 0; b < parent->getNBatch(); b++){
-      if(activity->isSparse){
-         totActiveNeuron[b] = activity->numActive[b];
+      float dt_factor;
+      if (getPvpatchAccumulateType()==ACCUMULATE_STOCHASTIC) {
+         dt_factor = getParent()->getDeltaTime();
+      }
+      else if (getPvpatchAccumulateType()==ACCUMULATE_CONVOLVE) {
+         dt_factor = getConvertToRateDeltaTimeFactor();
       }
       else{
-         totActiveNeuron[b] = preSynapticLayer()->getNumExtended();
+         std::cout << "Pooling accumulate not implemented for GPUs";
+         exit(-1);
       }
-      if(totActiveNeuron[b] > maxTotalActiveNeuron){
-         maxTotalActiveNeuron = totActiveNeuron[b];
-      }
-   }
-
-   long totPatchSize = xPatchSize() * yPatchSize() * fPatchSize();
-
-   long totThreads = maxTotalActiveNeuron * totPatchSize;
 
 #ifdef PV_USE_CUDA
-   //krRecvPre->set_numActive(totActiveNeuron);
+      krRecvPre->set_dt_factor(dt_factor);
+#endif // PV_USE_CUDA
 
-   int maxThreads = parent->getDevice()->get_max_threads();
-   int numLocalThreads = totPatchSize < maxThreads ? totPatchSize : maxThreads;
+      //Post layer receives synaptic input
+      //Only with respect to post layer
+      const PVLayerLoc * preLoc = preSynapticLayer()->getLayerLoc();
+      const PVLayerLoc * postLoc = postSynapticLayer()->getLayerLoc();
+      //If the connection uses gpu to receive, update all buffers
 
-   krRecvPre->run_nocheck(totThreads, numLocalThreads);
+      //TODO see if you can avoid this step of transferring patches to gpu
+      //Based on arborId
+      //Other way would be to just allocate all arbors to gpu
+
+      //If more than 1 arbor, need to update patches and GSynPatchStart.
+      //If one arbor, done in allocatePreKernel in HyPerConn
+      if(numberOfAxonalArborLists() > 1){
+         PVPatch* h_patches = weights(arborID)[0]; //0 because it's one block of memory
+#ifdef PV_USE_CUDA
+         PVCuda::CudaBuffer * d_patches = getDevicePatches();
 #endif
+         pvAssert(d_patches);
+
+         d_patches->copyToDevice(h_patches);
+
+         size_t* h_GSynPatchStart = getGSynPatchStart()[arborID];
+#ifdef PV_USE_CUDA
+         PVCuda::CudaBuffer * d_GSynPatchStart = getDeviceGSynPatchStart();
+#endif
+         pvAssert(d_GSynPatchStart);
+         d_GSynPatchStart->copyToDevice(h_GSynPatchStart);
+      }
+
+      //Update pre datastore, post gsyn, and conn weights
+      //Only if their updated
+      if(preSynapticLayer()->getUpdatedDeviceDatastoreFlag()){
+         float * h_preDatastore= activity->data;
+#ifdef PV_USE_CUDA
+         PVCuda::CudaBuffer * d_preDatastore = preSynapticLayer()->getDeviceDatastore();
+#endif
+         pvAssert(d_preDatastore);
+         d_preDatastore->copyToDevice(h_preDatastore);
+
+         //Copy active indices and num active if needed
+         if(activity->isSparse){
+#ifdef PV_USE_CUDA
+            PVCuda::CudaBuffer * d_ActiveIndices;
+            PVCuda::CudaBuffer * d_numActive;
+#endif
+            d_ActiveIndices = preSynapticLayer()->getDeviceActiveIndices();
+            d_numActive = preSynapticLayer()->getDeviceNumActive();
+            pvAssert(d_ActiveIndices);
+            unsigned int * h_ActiveIndices = activity->activeIndices;
+            long * h_numActive = activity->numActive;
+            pvAssert(h_ActiveIndices);
+            d_numActive->copyToDevice(h_numActive);
+            d_ActiveIndices->copyToDevice(h_ActiveIndices);
+         }
+         //Device now has updated
+         preSynapticLayer()->setUpdatedDeviceDatastoreFlag(false);
+      }
+
+      //X direction is active neuron
+      //Y direction is post patch size
+      long totActiveNeuron[parent->getNBatch()];
+      long maxTotalActiveNeuron = 0;
+      for(int b = 0; b < parent->getNBatch(); b++){
+         if(activity->isSparse){
+            totActiveNeuron[b] = activity->numActive[b];
+         }
+         else{
+            totActiveNeuron[b] = preSynapticLayer()->getNumExtended();
+         }
+         if(totActiveNeuron[b] > maxTotalActiveNeuron){
+            maxTotalActiveNeuron = totActiveNeuron[b];
+         }
+      }
+
+      long totPatchSize = xPatchSize() * yPatchSize() * fPatchSize();
+
+      long totThreads = maxTotalActiveNeuron * totPatchSize;
+      
+#ifdef PV_USE_CUDA
+      //krRecvPre->set_numActive(totActiveNeuron);
+      
+      int maxThreads = parent->getDevice()->get_max_threads();
+      int numLocalThreads = totPatchSize < maxThreads ? totPatchSize : maxThreads;
+      
+      krRecvPre->run_nocheck(totThreads, numLocalThreads);
+#endif
+      
+      return PV_SUCCESS;
+   }
+#endif
+
+#if 0
+int HyPerConn::deliverPostsynapticPerspectiveGPU(PVLayerCube const * activity, int arbor) {
+   // Check channel number for noupdate
+   if(getChannel() == CHANNEL_NOUPDATE) {
+      return PV_SUCCESS;
+   }
+   pvAssert(post->getChannel(getChannel()));
+   pvAssert(arbor >= 0);
+
+   if (mDeliver == 0) {
+      mDeliver = new DeliverPullCuda<float>(this, preSynapticLayer(), postSynapticLayer(), parent->getNumThreads(), parent->getNBatch());
+   }
+
+   (*mDeliver)(activity, arbor);
 
    return PV_SUCCESS;
 }
 
+#else
 int HyPerConn::deliverPostsynapticPerspectiveGPU(PVLayerCube const * activity, int arborID) {
 
    //Check channel number for noupdate
@@ -3288,9 +3238,7 @@ int HyPerConn::deliverPostsynapticPerspectiveGPU(PVLayerCube const * activity, i
    }
 
    pvAssert(krRecvPost);
-#ifdef PV_USE_CUDA
    krRecvPost->set_dt_factor(dt_factor);
-#endif // PV_USE_CUDA
 
    const PVLayerLoc * sourceLoc = pre->getLayerLoc();
    const PVLayerLoc * targetLoc = post->getLayerLoc();
@@ -3321,9 +3269,7 @@ int HyPerConn::deliverPostsynapticPerspectiveGPU(PVLayerCube const * activity, i
    //Only if they're updated
    if(pre->getUpdatedDeviceDatastoreFlag()){
       float * h_preDatastore = activity->data;
-#ifdef PV_USE_CUDA
       PVCuda::CudaBuffer* d_preDatastore = pre->getDeviceDatastore();
-#endif
       pvAssert(d_preDatastore);
       d_preDatastore->copyToDevice(h_preDatastore);
       //Device now has updated
@@ -3331,7 +3277,7 @@ int HyPerConn::deliverPostsynapticPerspectiveGPU(PVLayerCube const * activity, i
       updatePreAct = true;
    }
 
-#if defined(PV_USE_CUDA) && defined(PV_USE_CUDNN)
+#ifdef PV_USE_CUDNN
    //Permutation buffer is local to the kernel, NOT the layer
    //Therefore, we must permute Datastore every time
    krRecvPost->permuteDatastorePVToCudnn();
@@ -3339,24 +3285,22 @@ int HyPerConn::deliverPostsynapticPerspectiveGPU(PVLayerCube const * activity, i
    
    //Permute GSyn
    krRecvPost->permuteGSynPVToCudnn(getChannel());
-#endif // defined(PV_USE_CUDA) && defined(PV_USE_CUDNN)
-//#endif // PV_USE_CUDA
+#endif // PV_USE_CUDNN
 
    int totF = targetNf;
    int totX = targetNx;
    int totY = targetNy;
    //Make sure local sizes are divisible by f, x, and y
-#ifdef PV_USE_CUDA
    krRecvPost->run(totX, totY, totF, getNumXLocal(), getNumYLocal(), getNumFLocal());
-#endif
 
-#if defined(PV_USE_CUDA) && defined(PV_USE_CUDNN)
+#ifdef PV_USE_CUDNN
    krRecvPost->permuteGSynCudnnToPV(getChannel());
 #endif
-
    return PV_SUCCESS;
 }
-#endif // defined(PV_USE_OPENCL) || defined(PV_USE_CUDA)
+#endif
+
+#endif // PV_USE_CUDA
 
 
 void HyPerConn::deliverOnePostNeuronActivity(int arborID, int kTargetExt, int inSy, float* activityStartBuf, pvdata_t* gSynPatchPos, float dt_factor, taus_uint4 * rngPtr){

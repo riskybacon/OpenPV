@@ -44,6 +44,7 @@ set(SRC_SUBDIRS
   src/columns
   src/connections
   src/cudakernels
+  src/components
   src/include
   src/io
   src/kernels
@@ -112,11 +113,13 @@ if(PV_USE_CUDA AND CUDA_FOUND AND CUDNN_FOUND)
   list(APPEND CMAKE_CXX_FLAGS ${PV_NVCC_FLAGS})
   STRING(REGEX REPLACE ";" " " CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
   cuda_compile(CUBIN ${PVLibSrcCu})
+  # Adding c++11 flags must come after cuda_compile
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${PV_CPP_11X_FLAGS}")
   add_library(${PV_LIBRARY_NAME} ${SHARED_FLAG} ${PVLibSrc} ${BISON_PARSER_OUTPUTS} ${FLEX_SCANNER_OUTPUTS} ${CUBIN})
 else()
   # Add  PetaVision library target, no CUDA
   STRING(REGEX REPLACE ";" " " CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${PV_CPP_11X_FLAGS}")
   add_library(${PV_LIBRARY_NAME} ${SHARED_FLAG} ${PVLibSrc} ${BISON_PARSER_OUTPUTS} ${FLEX_SCANNER_OUTPUTS})
 endif()
 

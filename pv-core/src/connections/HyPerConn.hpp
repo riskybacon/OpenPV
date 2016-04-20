@@ -9,19 +9,22 @@
 #define HYPERCONN_HPP_
 
 #include "BaseConnection.hpp"
-#include "../columns/InterColComm.hpp"
-#include "../columns/HyPerCol.hpp"
-#include "../columns/Random.hpp"
-#include "../include/pv_common.h"
-#include "../include/pv_types.h"
-#include "../io/PVParams.hpp"
-#include "../io/BaseConnectionProbe.hpp"
-#include "../layers/HyPerLayer.hpp"
-#include "../utils/Timer.hpp"
+#include "columns/InterColComm.hpp"
+#include "columns/HyPerCol.hpp"
+#include "columns/Random.hpp"
+#include "include/pv_common.h"
+#include "include/pv_types.h"
+#include "io/PVParams.hpp"
+#include "io/BaseConnectionProbe.hpp"
+#include "layers/HyPerLayer.hpp"
+#include "utils/Timer.hpp"
 #include <stdlib.h>
 #include <vector>
 #include <stdlib.h>
 #include <set>
+#include <map>
+#include <memory>
+#include "utils/PVLog.hpp"
 
 #ifdef PV_USE_OPENCL
 #include "../arch/opencl/CLKernel.hpp"
@@ -54,6 +57,7 @@ class NormalizeBase;
 class Random;
 class TransposeConn;
 class privateTransposeConn;
+class Deliver;
 
 /**
  * A HyPerConn identifies a connection between two layers
@@ -67,7 +71,8 @@ public:
    friend class TransposeConn;
    friend class privateTransposeConn;
    friend class TransposePoolingConn;
-   
+   friend class Deliver;
+
    HyPerConn(const char * name, HyPerCol * hc, InitWeights * weightInitializer=NULL, NormalizeBase * weightNormalizer=NULL);
    virtual ~HyPerConn();
 //#ifdef PV_USE_OPENCL
@@ -93,6 +98,8 @@ public:
    virtual int writeWeights(PVPatch*** patches, pvwdata_t** dataStart,
          int numPatches, const char* filename, double timef, bool compressWeights, bool last);
    virtual int writeTextWeights(const char* filename, int k);
+
+   float getConvertToRateDeltaTimeFactor();
 
    virtual int writeTextWeightsExtra(PV_Stream * pvstream, int k, int arborID) {
       return PV_SUCCESS;
@@ -337,6 +344,11 @@ public:
    void setNeedPost(bool inBool){needPost = inBool;}
    void setNeedAllocPostWeights (bool inBool){needAllocPostWeights = inBool;}
 
+   // An unfortunate need for Deliver classes to need to know something about the post connection's geometry
+   HyPerConn *getPostConn() const {
+      return postConn;
+   }
+
 protected:
    // char * filename; // Filename if loading weights from a file
    int fileparams[NUM_WGT_PARAMS]; // The header of the file named by the filename member variable
@@ -483,8 +495,6 @@ protected:
    bool useListOfArborFiles;
    bool combineWeightFiles;
    bool updateGSynFromPostPerspective;
-
-   pvdata_t ** thread_gSyn; //Accumulate buffer for each thread, only used if numThreads > 1 // Move back to HyPerLayer?
 
    double weightUpdatePeriod;
    double weightUpdateTime;
@@ -938,8 +948,6 @@ protected:
    virtual int deliverPostsynapticPerspectiveGPU(PVLayerCube const * activity, int arborID);
 #endif // defined(PV_USE_OPENCL) || defined(PV_USE_CUDA)
 
-   float getConvertToRateDeltaTimeFactor();
-
 //GPU variables
 #if defined(PV_USE_OPENCL) || defined(PV_USE_CUDA)
 public:
@@ -1221,6 +1229,74 @@ protected:
       *adjustedDim = width;
       return PV_SUCCESS;
    }
+
+protected:
+      Deliver* mDeliver = 0;
+      
+#ifdef PV_USE_OPENMP_THREADS
+   // OpenMP Specific functions, the non-OpenMP version do nothing
+   // and are compiled out in non-OpenMP builds
+
+   // Accumulation buffer for each thread
+   std::vector< std::vector<pvdata_t> > _threadGSyn;
+
+   /**
+    * Allocate a per-thread gSyn buffer. This gives each thread a separate place to accumulate output
+    */
+   void allocateThreadGSyn(int numThreads, int numPostNeurons) {
+      _threadGSyn.resize(numThreads);
+
+      for (auto& gSyn : _threadGSyn) {
+         gSyn.resize(numPostNeurons);
+      }
+   }
+
+   void clearThreadGSyn(int numThreads, int numPostNeurons) {
+#pragma omp parallel for
+      for(int i = 0; i < numThreads * numPostNeurons; i++){
+         int ti = i / numPostNeurons;
+         int ni = i % numPostNeurons;
+         _threadGSyn[ti][ni] = 0;
+      }
+   }
+
+   /**
+    * Reduce the thread gSyn buffers into the post layer
+    */
+   void accumulateIntoPost(pvdata_t *gSyn, int numNeurons) {
+      // Memory access patterns may be inefficient here. However, there are
+      // no collisions when updating the post synaptic perspective, so no
+      // atomics or locking required.
+#pragma omp parallel for
+      for(int ni = 0; ni < numNeurons; ni++){
+         for(int ti = 0; ti < parent->getNumThreads(); ti++){
+            gSyn[ni] += _threadGSyn[ti][ni];
+         }
+      }
+   }
+
+   /**
+    * @returns the appropriate _threadGyn for the OpenMP implementation.
+    *          In the non-OpenMP implementation, this returns default head
+    */
+    pvdata_t *patchHead(pvdata_t *defaultHead) {
+       Debug() << omp_get_thread_num() << "/" << omp_get_num_threads() << std::endl;
+       return _threadGSyn[omp_get_thread_num()].data();
+   }
+
+#else // PV_USE_OPENMP_THREADS
+
+   // Compiled out in non-OpenMP builds
+   void allocateThreadGSyn(int numThreads, int numPostNeurons) {}
+   void clearThreadGSyn(int numThreads, int numPostNeurons) {}
+   void accumulateIntoPost(pvdata_t *gSyn) {}
+
+   // Returns the input in non-OpenMP build, returns pointer into
+   // _threadGSyn in OpenMP build
+   pvdata_t *patchHead(pvdata_t *defaultHead) const {
+      return defaultHead;
+   }
+#endif // PV_USE_OPENMP_THREADS
 
 };
 

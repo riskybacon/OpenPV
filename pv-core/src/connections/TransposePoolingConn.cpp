@@ -531,49 +531,24 @@ int TransposePoolingConn::deliverPresynapticPerspective(PVLayerCube const * acti
          numLoop = numExtended;
       }
 
-#ifdef PV_USE_OPENMP_THREADS
-      //Clear all thread gsyn buffer
-      if(thread_gSyn){
-         int numNeurons = post->getNumNeurons();
-#ifdef PV_USE_OPENMP_THREADS
-#pragma omp parallel for
-#endif
-         for(int i = 0; i < parent->getNumThreads() * numNeurons; i++){
-            int ti = i/numNeurons;
-            int ni = i % numNeurons;
-            thread_gSyn[ti][ni] = 0;
-         }
-      }
-#endif // PV_USE_OPENMP_THREADS
-
+      clearThreadGSyn(parent->getNumThreads(), post->getNumNeurons());
 
 #ifdef PV_USE_OPENMP_THREADS
 #pragma omp parallel for schedule(static)
 #endif
       for (int loopIndex = 0; loopIndex < numLoop; loopIndex++) {
-         int kPreExt;
+         int kPreExt = loopIndex;
          if(activity->isSparse){
             kPreExt = activeIndicesBatch[loopIndex];
-         }
-         else{
-            kPreExt = loopIndex;
          }
 
          float a = activityBatch[kPreExt];
          if (a == 0.0f) continue;
 
          //If we're using thread_gSyn, set this here
-         pvdata_t * gSynPatchHead;
+         pvdata_t * gSynPatchHead = gSynPatchHeadBatch;
 #ifdef PV_USE_OPENMP_THREADS
-         if(thread_gSyn){
-            int ti = omp_get_thread_num();
-            gSynPatchHead = thread_gSyn[ti];
-         }
-         else{
-            gSynPatchHead = gSynPatchHeadBatch;
-         }
-#else // PV_USE_OPENMP_THREADS
-         gSynPatchHead = gSynPatchHeadBatch;
+         gSynPatchHead = _threadGSyn[omp_get_thread_num()].data();
 #endif // PV_USE_OPENMP_THREADS
 
          const int kxPreExt = kxPos(kPreExt, preLoc->nx + preLoc->halo.lt + preLoc->halo.rt, preLoc->ny + preLoc->halo.dn + preLoc->halo.up, preLoc->nf);
@@ -646,29 +621,27 @@ int TransposePoolingConn::deliverPresynapticPerspective(PVLayerCube const * acti
 
 #ifdef PV_USE_OPENMP_THREADS
       //Set back into gSyn
-      if(thread_gSyn){
-         pvdata_t * gSynPatchHead = gSynPatchHeadBatch;
-         int numNeurons = post->getNumNeurons();
-         //Looping over neurons first to be thread safe
+      pvdata_t * gSynPatchHead = gSynPatchHeadBatch;
+      int numNeurons = post->getNumNeurons();
+      //Looping over neurons first to be thread safe
 #pragma omp parallel for
-         for(int ni = 0; ni < numNeurons; ni++){
-            if(pvpatchAccumulateType == ACCUMULATE_MAXPOOLING){
-               //Grab maxumum magnitude of thread_gSyn and set that value
-               float maxMag = -INFINITY;
-               int maxMagIdx = -1;
-               for(int ti = 0; ti < parent->getNumThreads(); ti++){
-                  if(maxMag < fabs(thread_gSyn[ti][ni])){
-                     maxMag = fabs(thread_gSyn[ti][ni]);
-                     maxMagIdx = ti;
-                  }
+      for(int ni = 0; ni < numNeurons; ni++){
+         if(pvpatchAccumulateType == ACCUMULATE_MAXPOOLING){
+            //Grab maxumum magnitude of thread_gSyn and set that value
+            float maxMag = -INFINITY;
+            int maxMagIdx = -1;
+            for(int ti = 0; ti < parent->getNumThreads(); ti++){
+               if(maxMag < fabs(_threadGSyn[ti][ni])){
+                  maxMag = fabs(_threadGSyn[ti][ni]);
+                  maxMagIdx = ti;
                }
-               assert(maxMagIdx >= 0);
-               gSynPatchHead[ni] = thread_gSyn[maxMagIdx][ni];
             }
-            else{
-               for(int ti = 0; ti < parent->getNumThreads(); ti++){
-                  gSynPatchHead[ni] += thread_gSyn[ti][ni];
-               }
+            assert(maxMagIdx >= 0);
+            gSynPatchHead[ni] = _threadGSyn[maxMagIdx][ni];
+         }
+         else{
+            for(int ti = 0; ti < parent->getNumThreads(); ti++){
+               gSynPatchHead[ni] += _threadGSyn[ti][ni];
             }
          }
       }

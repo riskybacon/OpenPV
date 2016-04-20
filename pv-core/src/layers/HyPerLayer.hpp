@@ -492,7 +492,7 @@ public:
 
    const char * getName()            {return name;}
 
-   int getNumNeurons()               {return clayer->numNeurons;}
+   int getNumNeurons()               const {return clayer->numNeurons;}
    int getNumExtended()              {return clayer->numExtended;}
    int getNumNeuronsAllBatches()     {return clayer->numNeuronsAllBatches;}
    int getNumExtendedAllBatches()    {return clayer->numExtendedAllBatches;}
@@ -536,7 +536,7 @@ public:
    // implementation of LayerDataInterface interface
    //
    const pvdata_t   * getLayerData(int delay=0);
-   const PVLayerLoc * getLayerLoc()  { return &(clayer->loc); }
+   const PVLayerLoc * getLayerLoc()  const { return &(clayer->loc); }
    bool isExtended()                 { return true; }
 
    double getLastUpdateTime() { return lastUpdateTime; }

@@ -4,6 +4,7 @@ add_subdirectory(
    columns
    connections
    cudakernels
+   delivery
    include
    io
    kernels

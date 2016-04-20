@@ -417,48 +417,26 @@ int PoolingConn::deliverPresynapticPerspective(PVLayerCube const * activity, int
          }
       }
 
-#ifdef PV_USE_OPENMP_THREADS
-      //Clear all gsyn buffers
-      if(thread_gSyn){
-         int numNeurons = post->getNumNeurons();
-#ifdef PV_USE_OPENMP_THREADS
-#pragma omp parallel for
-#endif
-         for(int i = 0; i < parent->getNumThreads() * numNeurons; i++){
-            int ti = i/numNeurons;
-            int ni = i % numNeurons;
-            thread_gSyn[ti][ni] = resetVal;
-         }
-      }
-#endif // PV_USE_OPENMP_THREADS
-      
+      clearThreadGSyn(parent->getNumThreads(), post->getNumNeurons());
+
 #ifdef PV_USE_OPENMP_THREADS
 #pragma omp parallel for schedule(static)
 #endif
       for (int loopIndex = 0; loopIndex < numLoop; loopIndex++) {
-         int kPreExt;
+         int kPreExt = loopIndex;
          if(activity->isSparse){
             kPreExt = activeIndicesBatch[loopIndex];
-         }
-         else{
-            kPreExt = loopIndex;
          }
 
          float a = activityBatch[kPreExt] * dt_factor;
          //if (a == 0.0f) continue;
 
          //If we're using thread_gSyn, set this here
-         pvdata_t * gSynPatchHead;
+         pvdata_t *gSynPatchHead = gSynPatchHeadBatch;
          //float * gatePatchHead = NULL;
-         int * gatePatchHead = NULL;
+         int *gatePatchHead = NULL;
 #ifdef PV_USE_OPENMP_THREADS
-         if(thread_gSyn){
-            int ti = omp_get_thread_num();
-            gSynPatchHead = thread_gSyn[ti];
-         }
-         else{
-            gSynPatchHead = gSynPatchHeadBatch;
-         }
+         gSynPatchHead = _threadGSyn[omp_get_thread_num()].data();
 
          if(needPostIndexLayer){
             if(thread_gateIdxBuffer){
@@ -516,33 +494,31 @@ int PoolingConn::deliverPresynapticPerspective(PVLayerCube const * activity, int
       }
 #ifdef PV_USE_OPENMP_THREADS
       //Accumulate back into gSyn // Should this be done in HyPerLayer where it can be done once, as opposed to once per connection?
-      if(thread_gSyn){
-         pvdata_t * gSynPatchHead = gSynPatchHeadBatch;
-         //float* gateIdxBuffer = postIndexLayer->getChannel(CHANNEL_EXC);
-         int * gateIdxBuffer = NULL;
-         if(needPostIndexLayer && thread_gateIdxBuffer){
-            gateIdxBuffer = gatePatchHeadBatch;
-         }
-         int numNeurons = post->getNumNeurons();
-         //Looping over neurons first to be thread safe
+      pvdata_t * gSynPatchHead = gSynPatchHeadBatch;
+      //float* gateIdxBuffer = postIndexLayer->getChannel(CHANNEL_EXC);
+      int * gateIdxBuffer = NULL;
+      if(needPostIndexLayer && thread_gateIdxBuffer){
+         gateIdxBuffer = gatePatchHeadBatch;
+      }
+      int numNeurons = post->getNumNeurons();
+      //Looping over neurons first to be thread safe
 #pragma omp parallel for
-         for(int ni = 0; ni < numNeurons; ni++){
-            //Different for maxpooling
-            if(getPvpatchAccumulateType() == ACCUMULATE_MAXPOOLING){
-               for(int ti = 0; ti < parent->getNumThreads(); ti++){
-                  if(gSynPatchHead[ni] < thread_gSyn[ti][ni]){
-                     gSynPatchHead[ni] = thread_gSyn[ti][ni];
-                     if(needPostIndexLayer && thread_gateIdxBuffer){
-                        gateIdxBuffer[ni] = thread_gateIdxBuffer[ti][ni]; 
-                        assert(gateIdxBuffer >= 0);
-                     }
+      for(int ni = 0; ni < numNeurons; ni++){
+         //Different for maxpooling
+         if(getPvpatchAccumulateType() == ACCUMULATE_MAXPOOLING){
+            for(int ti = 0; ti < parent->getNumThreads(); ti++){
+               if(gSynPatchHead[ni] < _threadGSyn[ti][ni]){
+                  gSynPatchHead[ni] = _threadGSyn[ti][ni];
+                  if(needPostIndexLayer && thread_gateIdxBuffer){
+                     gateIdxBuffer[ni] = thread_gateIdxBuffer[ti][ni]; 
+                     assert(gateIdxBuffer >= 0);
                   }
                }
             }
-            else{
-               for(int ti = 0; ti < parent->getNumThreads(); ti++){
-                  gSynPatchHead[ni] += thread_gSyn[ti][ni];
-               }
+         }
+         else{
+            for(int ti = 0; ti < parent->getNumThreads(); ti++){
+               gSynPatchHead[ni] += _threadGSyn[ti][ni];
             }
          }
       }
