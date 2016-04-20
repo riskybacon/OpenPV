@@ -107,9 +107,10 @@ public:
       // Memory access patterns may be inefficient here. However, there are
       // no collisions when updating the post synaptic perspective, so no
       // atomics or locking required.
-      //#pragma omp parallel for
+#pragma omp parallel for
       for (int ti = 0; ti < mNumThreads; ti++) {
          for (int ni = 0; ni < mNumElements; ni++) {
+#pragma omp atomic
             dest[ni] += mBuffer[ti][ni];
          }
       }
