@@ -2895,7 +2895,6 @@ int HyPerConn::deliver() {
    return PV_SUCCESS;
 }
 
-#if 1
 int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arbor) {
    // Check if we need to update based on connection's channel
    if (getChannel() == CHANNEL_NOUPDATE) {
@@ -2913,116 +2912,6 @@ int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int a
 
    return PV_SUCCESS;
 }
-#else
-   int HyPerConn::deliverPresynapticPerspective(PVLayerCube const * activity, int arborID) {
-      //Check if we need to update based on connection's channel
-      if(getChannel() == CHANNEL_NOUPDATE){
-         return PV_SUCCESS;
-      }
-      pvAssert(post->getChannel(getChannel()));
-
-      float dt_factor;
-      if (getPvpatchAccumulateType()==ACCUMULATE_STOCHASTIC) {
-         dt_factor = getParent()->getDeltaTime();
-      }
-      else {
-         dt_factor = getConvertToRateDeltaTimeFactor();
-      }
-
-      if (_weightSparsity > 0.0f && !_sparseWeightsAllocated[arborID]) {
-         allocateSparseWeightsPre(activity, arborID);
-      }
-
-      const PVLayerLoc * preLoc = preSynapticLayer()->getLayerLoc();
-      const PVLayerLoc * postLoc = postSynapticLayer()->getLayerLoc();
-
-
-      pvAssert(arborID >= 0);
-      const int numExtended = activity->numItems;
-
-      int nbatch = parent->getNBatch();
-
-      for(int b = 0; b < nbatch; b++){
-         pvdata_t * activityBatch = activity->data + b * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
-         pvdata_t * gSynPatchHeadBatch = post->getChannel(getChannel()) + b * postLoc->nx * postLoc->ny * postLoc->nf;
-         unsigned int * activeIndicesBatch = NULL;
-         if(activity->isSparse){
-            activeIndicesBatch = activity->activeIndices + b * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
-         }
-
-         int numLoop;
-         if(activity->isSparse){
-            numLoop = activity->numActive[b];
-         }
-         else{
-            numLoop = numExtended;
-         }
-
-#ifdef PV_USE_OPENMP_THREADS
-         //Clear all thread gsyn buffer
-            int numNeurons = post->getNumNeurons();
-#ifdef PV_USE_OPENMP_THREADS
-#pragma omp parallel for
-#endif
-            for(int i = 0; i < parent->getNumThreads() * numNeurons; i++){
-               int ti = i/numNeurons;
-               int ni = i % numNeurons;
-               _threadGSyn[ti][ni] = 0;
-            }
-#endif // PV_USE_OPENMP_THREADS
-
-#ifdef PV_USE_OPENMP_THREADS
-#pragma omp parallel for schedule(static)
-#endif
-         for (int loopIndex = 0; loopIndex < numLoop; loopIndex++) {
-            int kPreExt;
-            if(activity->isSparse){
-               kPreExt = activeIndicesBatch[loopIndex];
-            }
-            else{
-               kPreExt = loopIndex;
-            }
-
-            float a = activityBatch[kPreExt] * dt_factor;
-            if (a == 0.0f) continue;
-
-            //If we're using _threadGSyn, set this here
-            pvdata_t * gSynPatchHead;
-#ifdef PV_USE_OPENMP_THREADS
-            if(_threadGSyn.size() > 0){
-               int ti = omp_get_thread_num();
-               gSynPatchHead = _threadGSyn[ti].data();
-            }
-            else{
-               gSynPatchHead = gSynPatchHeadBatch;
-            }
-#else // PV_USE_OPENMP_THREADS
-            gSynPatchHead = gSynPatchHeadBatch;
-#endif // PV_USE_OPENMP_THREADS
-            if (_weightSparsity <= 0.0f) {
-               deliverOnePreNeuronActivity(kPreExt, arborID, a, gSynPatchHead, getRandState(kPreExt));
-            } else {
-               deliverOnePreNeuronActivitySparseWeights(kPreExt, arborID, a, gSynPatchHead, getRandState(kPreExt));
-            }
-         }
-#ifdef PV_USE_OPENMP_THREADS
-         //Accumulate back into gSyn // Should this be done in HyPerLayer where it can be done once, as opposed to once per connection?
-         if(_threadGSyn.size() > 0) {
-            pvdata_t * gSynPatchHead = gSynPatchHeadBatch;
-            int numNeurons = post->getNumNeurons();
-            //Looping over neurons first to be thread safe
-#pragma omp parallel for
-            for(int ni = 0; ni < numNeurons; ni++){
-               for(int ti = 0; ti < parent->getNumThreads(); ti++){
-                  gSynPatchHead[ni] += _threadGSyn[ti][ni];
-               }
-            }
-         }
-#endif
-      }
-      return PV_SUCCESS;
-   }
-#endif
 
 int HyPerConn::deliverPostsynapticPerspective(PVLayerCube const * activity, int arbor, int* numActive, int** activeList) {
    pvAssert(post->getChannel(getChannel()));
@@ -3061,7 +2950,7 @@ void HyPerConn::updateDeviceWeights(){
 }
 
 
-#if 0
+#if 1
 int HyPerConn::deliverPresynapticPerspectiveGPU(PVLayerCube const * activity, int arbor) {
    pvAssert(krRecvPre);
    // Check if we need to update based on connection's channel
