@@ -6,6 +6,16 @@
 #include "components/Boilerplate.h"
 
 namespace PV {
+
+void accumVecs(float *dest, float * src, size_t count) {
+   for (int idx = 0; idx < count; idx++) {
+      dest[idx] += src[idx];
+   }
+   return dest;
+}
+
+#pragma omp declare reduction(accumVecs: float : omp_out=accumVecs(&omp_out, &omp_in))
+   
 /**
  * Thread reduction buffer
  */
@@ -107,13 +117,28 @@ public:
       // Memory access patterns may be inefficient here. However, there are
       // no collisions when updating the post synaptic perspective, so no
       // atomics or locking required.
-#pragma omp parallel for
-      for (int ti = 0; ti < mNumThreads; ti++) {
-         for (int ni = 0; ni < mNumElements; ni++) {
-#pragma omp atomic
+//#pragma omp parallel for
+//      for(int ni = 0; ni < mNumElements; ni++){
+//         for(int ti = 0; ti < mNumThreads; ti++){
+//            dest[ni] += mBuffer[ti][ni];
+//         }
+//      }
+
+      for(int ti = 0; ti < mNumThreads; ti++) {
+#pragma omp parallel for schedule(static,7)
+         for(int ni = 0; ni < mNumElements; ni++) {
             dest[ni] += mBuffer[ti][ni];
          }
       }
+
+#pragma omp parallel for reduction(accumVecs: dest)
+      for ( n=0 ; n<10 ; ++n )
+      {
+         for (m=0; m<=n; ++m){
+            S.v[n] += A[m];
+         }
+      }
+
    }
 };
 } // namespace PV

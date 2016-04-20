@@ -140,16 +140,16 @@ public:
             }
          }
 
-         //         reduceIntoPost(gSynPatchHeadBatch);
-#ifdef PV_USE_OPENMP_THREADS
-#pragma omp parallel for
-         for(int ni = 0; ni < mPost->getNumNeurons(); ni++){
-            for(int ti = 0; ti < mConn->getParent()->getNumThreads(); ti++){
-               gSynPatchHeadBatch[ni] += mThreadGSyn[ti][ni];
-            }
-         }
-#endif
-
+         reduceIntoPost(gSynPatchHeadBatch);
+         // TODO 2016-04-20 jbowles, remove the following reduction
+//#ifdef PV_USE_OPENMP_THREADS
+//#pragma omp parallel for
+//         for(int ni = 0; ni < mPost->getNumNeurons(); ni++){
+//            for(int ti = 0; ti < mConn->getParent()->getNumThreads(); ti++){
+//               gSynPatchHeadBatch[ni] += mThreadGSyn[ti][ni];
+//            }
+//         }
+//#endif
       }
    }
 
@@ -162,7 +162,7 @@ private:
     * Allocate a per-thread gSyn buffer. This gives each thread a separate place to accumulate output
     */
    void allocateThreadGSyn(int numThreads, int numPostNeurons) {
-      mThreadGSyn.resize(numThreads, mPost->getNumNeurons());
+      mThreadGSyn.resize(numThreads, numPostNeurons);
    }
 
    /** 
