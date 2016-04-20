@@ -2966,7 +2966,6 @@ int HyPerConn::deliverPresynapticPerspectiveGPU(PVLayerCube const * activity, in
    return PV_SUCCESS;
 }
 
-#if 1
 int HyPerConn::deliverPostsynapticPerspectiveGPU(PVLayerCube const * activity, int arbor) {
    // Check channel number for noupdate
    if(getChannel() == CHANNEL_NOUPDATE) {
@@ -2986,40 +2985,40 @@ int HyPerConn::deliverPostsynapticPerspectiveGPU(PVLayerCube const * activity, i
 
 #endif // PV_USE_CUDA
 
-//void HyPerConn::deliverOnePostNeuronActivity(int arborID, int kTargetExt, int inSy, float* activityStartBuf, pvdata_t* gSynPatchPos, float dt_factor, taus_uint4 * rngPtr){
-//   //get source layer's patch y stride
-//   int syp = postConn->yPatchStride();
-//   int yPatchSize = postConn->yPatchSize();
-//   //Iterate through y patch
-//   int numPerStride = postConn->xPatchSize() * postConn->fPatchSize();
-//   int kernelIndex = postConn->patchToDataLUT(kTargetExt);
-//
-//   pvwdata_t* weightStartBuf = postConn->get_wDataHead(arborID, kernelIndex);
-//   int sf = 1;
-//   int offset = 0;
-//   for (int ky = 0; ky < yPatchSize; ky++){
-//      float * activityY = &(activityStartBuf[ky*inSy+offset]);
-//      pvwdata_t * weightY = weightStartBuf + ky*syp;
-//      //TODO add sf here
-//      (accumulateFunctionFromPostPointer)(0, numPerStride, gSynPatchPos, activityY, weightY, dt_factor, rngPtr, sf);
-//   }
-//}
-//
-//void HyPerConn::deliverOnePreNeuronActivity(int kPreExt, int arbor, pvadata_t a, pvgsyndata_t * postBufferStart, void * auxPtr) {
-//   PVPatch * weights = getWeights(kPreExt, arbor);
-//   const int nk = weights->nx * fPatchSize();
-//   const int ny = weights->ny;
-//   const int sy  = getPostNonextStrides()->sy;       // stride in layer
-//   const int syw = yPatchStride();                   // stride in patch
-//   pvwdata_t * weightDataStart = NULL; 
-//   pvgsyndata_t * postPatchStart = postBufferStart + getGSynPatchStart(kPreExt, arbor);
-//   int offset = 0;
-//   int sf = 1;
-//     weightDataStart = get_wData(arbor,kPreExt); // make this a pvwdata_t const *?
-//     for (int y = 0; y < ny; y++) {
-//       (accumulateFunctionPointer)(0, nk, postPatchStart + y*sy + offset, a, weightDataStart + y*syw + offset, auxPtr, sf);
-//     }
-//}
+void HyPerConn::deliverOnePostNeuronActivity(int arborID, int kTargetExt, int inSy, float* activityStartBuf, pvdata_t* gSynPatchPos, float dt_factor, taus_uint4 * rngPtr){
+   //get source layer's patch y stride
+   int syp = postConn->yPatchStride();
+   int yPatchSize = postConn->yPatchSize();
+   //Iterate through y patch
+   int numPerStride = postConn->xPatchSize() * postConn->fPatchSize();
+   int kernelIndex = postConn->patchToDataLUT(kTargetExt);
+
+   pvwdata_t* weightStartBuf = postConn->get_wDataHead(arborID, kernelIndex);
+   int sf = 1;
+   int offset = 0;
+   for (int ky = 0; ky < yPatchSize; ky++){
+      float * activityY = &(activityStartBuf[ky*inSy+offset]);
+      pvwdata_t * weightY = weightStartBuf + ky*syp;
+      //TODO add sf here
+      (accumulateFunctionFromPostPointer)(0, numPerStride, gSynPatchPos, activityY, weightY, dt_factor, rngPtr, sf);
+   }
+}
+
+void HyPerConn::deliverOnePreNeuronActivity(int kPreExt, int arbor, pvadata_t a, pvgsyndata_t * postBufferStart, void * auxPtr) {
+   PVPatch * weights = getWeights(kPreExt, arbor);
+   const int nk = weights->nx * fPatchSize();
+   const int ny = weights->ny;
+   const int sy  = getPostNonextStrides()->sy;       // stride in layer
+   const int syw = yPatchStride();                   // stride in patch
+   pvwdata_t * weightDataStart = NULL; 
+   pvgsyndata_t * postPatchStart = postBufferStart + getGSynPatchStart(kPreExt, arbor);
+   int offset = 0;
+   int sf = 1;
+     weightDataStart = get_wData(arbor,kPreExt); // make this a pvwdata_t const *?
+     for (int y = 0; y < ny; y++) {
+       (accumulateFunctionPointer)(0, nk, postPatchStart + y*sy + offset, a, weightDataStart + y*syw + offset, auxPtr, sf);
+     }
+}
 
 int HyPerConn::createWeights(PVPatch *** patches, int nWeightPatches, int nDataPatches, int nxPatch,
       int nyPatch, int nfPatch, int arborId)

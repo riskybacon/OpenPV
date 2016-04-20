@@ -74,7 +74,6 @@ public:
       allocateThreadGSyn(numThreads, mPost->getNumNeurons());
    }
 
-#if 1
    void operator()(PVLayerCube const * activity, int arbor, int* numActive = NULL, int** activeList = NULL) {
       // Get number of neurons restricted target
       const int numPostRestricted = mPost->getNumNeurons();
@@ -127,7 +126,7 @@ public:
             ActivityType a = activityBatch[preExt] * dtFactor;
             if (a == 0.0f) continue;
 
-            pvdata_t *gSynPatchHead = patchHead(gSynPatchHeadBatch);
+            PostType *gSynPatchHead = patchHead(gSynPatchHeadBatch);
 
             PVPatch *weights = mConn->getWeights(preExt, arbor);
             const int nk = weights->nx * mConn->fPatchSize();
@@ -140,94 +139,19 @@ public:
                mAccumulator(0, nk, postPatchStart + y * sy, a, weightDataStart + y * syw, 0, dtFactor);
             }
          }
-         
-         reduceIntoPost(gSynPatchHeadBatch);
-      }
-   }
-#else
-   void operator()(PVLayerCube const * activity, int arbor, int* numActive = NULL, int** activeList = NULL) {
 
-      float dt_factor;
-      if (mConn->getPvpatchAccumulateType()==ACCUMULATE_STOCHASTIC) {
-         dt_factor = mConn->getParent()->getDeltaTime();
-      }
-      else {
-         dt_factor = mConn->getConvertToRateDeltaTimeFactor();
-      }
-
-      const PVLayerLoc * preLoc = mPre->getLayerLoc();
-      const PVLayerLoc * postLoc = mPost->getLayerLoc();
-
-
-      const int numExtended = activity->numItems;
-
-      for(int b = 0; b < mNumBatches; b++){
-         pvdata_t * activityBatch = activity->data + b * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
-         pvdata_t * gSynPatchHeadBatch = mPost->getChannel(mConn->getChannel()) + b * postLoc->nx * postLoc->ny * postLoc->nf;
-         unsigned int * activeIndicesBatch = NULL;
-         if(activity->isSparse){
-            activeIndicesBatch = activity->activeIndices + b * (preLoc->nx + preLoc->halo.rt + preLoc->halo.lt) * (preLoc->ny + preLoc->halo.up + preLoc->halo.dn) * preLoc->nf;
-         }
-
-         int numLoop = numExtended;
-         if(activity->isSparse){
-            numLoop = activity->numActive[b];
-         }
-
-         clearThreadGSyn();
-
+         //         reduceIntoPost(gSynPatchHeadBatch);
 #ifdef PV_USE_OPENMP_THREADS
-#pragma omp parallel for schedule(static)
-#endif
-         for (int loopIndex = 0; loopIndex < numLoop; loopIndex++) {
-            int kPreExt;
-            if(activity->isSparse){
-               kPreExt = activeIndicesBatch[loopIndex];
-            }
-            else{
-               kPreExt = loopIndex;
-            }
-
-            float a = activityBatch[kPreExt] * dt_factor;
-            if (a == 0.0f) continue;
-
-            //If we're using _threadGSyn, set this here
-            pvdata_t * gSynPatchHead = patchHead(gSynPatchHeadBatch);
-
-            PVPatch * weights = mConn->getWeights(kPreExt, arbor);
-            const int nk = weights->nx * mConn->fPatchSize();
-            const int ny = weights->ny;
-            const int sy  = mConn->getPostNonextStrides()->sy;       // stride in layer
-            const int syw = mConn->yPatchStride();                   // stride in patch
-            pvwdata_t * weightDataStart = NULL;
-            pvgsyndata_t * postPatchStart = gSynPatchHead + mConn->getGSynPatchStart(kPreExt, arbor);
-            weightDataStart = mConn->get_wData(arbor,kPreExt); // make this a pvwdata_t const *?
-            for (int y = 0; y < ny; y++) {
-               mAccumulator(0, nk, postPatchStart + y * sy, a, weightDataStart + y * syw, 0, dt_factor);
-            }
-         }
-
-#if 1
-         reduceIntoPost(gSynPatchHeadBatch);
-#else
-#ifdef PV_USE_OPENMP_THREADS
-         //Accumulate back into gSyn // Should this be done in HyPerLayer where it can be done once, as opposed to once per connection?
-         if(mThreadGSyn.size() > 0) {
-            pvdata_t * gSynPatchHead = gSynPatchHeadBatch;
-            int numNeurons = mPost->getNumNeurons();
-            //Looping over neurons first to be thread safe
 #pragma omp parallel for
-            for(int ni = 0; ni < mPost->getNumNeurons(); ni++){
-               for(int ti = 0; ti < mConn->getParent()->getNumThreads(); ti++){
-                  gSynPatchHead[ni] += mThreadGSyn[ti][ni];
-               }
+         for(int ni = 0; ni < mPost->getNumNeurons(); ni++){
+            for(int ti = 0; ti < mConn->getParent()->getNumThreads(); ti++){
+               gSynPatchHeadBatch[ni] += mThreadGSyn[ti][ni];
             }
          }
 #endif
-#endif
+
       }
    }
-#endif
 
 private:
 
