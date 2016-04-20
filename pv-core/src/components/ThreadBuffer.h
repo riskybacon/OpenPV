@@ -7,15 +7,15 @@
 
 namespace PV {
 
-void accumVecs(float *dest, float * src, size_t count) {
-   for (int idx = 0; idx < count; idx++) {
-      dest[idx] += src[idx];
-   }
-   return dest;
-}
+//void accumVecs(float *dest, float * src, size_t count) {
+//   for (int idx = 0; idx < count; idx++) {
+//      dest[idx] += src[idx];
+//   }
+//   return dest;
+//}
+//
+//#pragma omp declare reduction(accumVecs: float : omp_out=accumVecs(&omp_out, &omp_in))
 
-#pragma omp declare reduction(accumVecs: float : omp_out=accumVecs(&omp_out, &omp_in))
-   
 /**
  * Thread reduction buffer
  */
@@ -131,13 +131,13 @@ public:
          }
       }
 
-#pragma omp parallel for reduction(accumVecs: dest)
-      for ( n=0 ; n<10 ; ++n )
-      {
-         for (m=0; m<=n; ++m){
-            S.v[n] += A[m];
-         }
-      }
+//#pragma omp parallel for reduction(accumVecs: dest)
+//      for ( n=0 ; n<10 ; ++n )
+//      {
+//         for (m=0; m<=n; ++m){
+//            S.v[n] += A[m];
+//         }
+//      }
 
    }
 };
